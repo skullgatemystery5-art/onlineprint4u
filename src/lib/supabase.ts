@@ -70,7 +70,7 @@ export type Order = {
   coupon_code: string | null;
   shipping_cost: number;
   total: number;
-  payment_method: 'razorpay' | 'cod' | 'advance';
+  payment_method: 'advance' | 'full_upi' | 'cod';
   payment_status: 'pending' | 'paid' | 'failed' | 'refunded';
   order_status:
     | 'placed'
@@ -84,6 +84,9 @@ export type Order = {
   shipping_address: string;
   shipping_pincode: string;
   courier_type: string;
+  delivery_type_label: string | null;
+  payment_screenshot_url: string | null;
+  customer_email: string | null;
   tracking_id: string | null;
   notes: string | null;
   created_at: string;

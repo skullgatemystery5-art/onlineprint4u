@@ -95,12 +95,7 @@ export default function CartPage() {
       toast.error('Your cart is empty.');
       return;
     }
-    if (!user) {
-      toast.info('Please sign in to checkout.');
-      navigate('/login?redirect=/checkout');
-      return;
-    }
-    navigate('/delivery-details');
+    navigate('/checkout');
   };
 
   if (items.length === 0) {

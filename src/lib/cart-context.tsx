@@ -3,7 +3,7 @@ import type { OrderItem, Coupon, PricingRate, ShippingRate } from './supabase';
 import { supabase } from './supabase';
 import {
   calculateCartTotal,
-  calculateItemPrice,
+  calculateItemPriceLocal,
   type CartTotal,
 } from './pricing';
 import {
@@ -87,15 +87,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         prev.map((item) => {
           if (item.id !== id) return item;
           const merged = { ...item, ...updates };
-          if (rates.length > 0) {
-            const { itemTotal } = calculateItemPrice(merged, rates);
-            merged.price = Math.round(itemTotal * 100) / 100;
-          }
+          const { itemTotal } = calculateItemPriceLocal(merged);
+          merged.price = Math.round(itemTotal * 100) / 100;
           return merged;
         })
       );
     },
-    [rates]
+    []
   );
 
   const updateCopies = useCallback(

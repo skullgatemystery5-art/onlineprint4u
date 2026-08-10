@@ -114,7 +114,8 @@ function expressAirShippingCost(weightGrams: number): number {
   return 200 + additionalSlabs * 40;
 }
 
-// Compute all available shipping methods for a given pincode + weight + subtotal
+// Compute all 4 shipping methods — always returns all options,
+// with `available` indicating whether the option is usable for the entered pincode
 export function getShippingMethods(
   pincode: string,
   weightGrams: number,
@@ -124,6 +125,7 @@ export function getShippingMethods(
   const local = isLocalPincode(pincode);
   const methods: ShippingMethod[] = [];
 
+  // 1) Store / Self Pickup — always available
   methods.push({
     type: 'pickup',
     label: 'Store / Self Pickup',
@@ -135,42 +137,42 @@ export function getShippingMethods(
     icon: 'Store',
   });
 
-  if (valid && local) {
-    const cost = localShippingCost(weightGrams, orderSubtotal);
-    methods.unshift({
-      type: 'local',
-      label: 'Local Same-Day Express Delivery',
-      description: 'Delivery via in-house team — within 2-6 hours',
-      estimatedDays: '2-6 hours',
-      available: true,
-      cost,
-      freeDelivery: cost === 0,
-      icon: 'Bike',
-    });
-  } else if (valid && !local) {
-    methods.unshift(
-      {
-        type: 'standard',
-        label: 'Standard National Courier (Surface)',
-        description: 'Surface shipping — 3 to 5 working days',
-        estimatedDays: '3-5 days',
-        available: true,
-        cost: standardShippingCost(weightGrams),
-        freeDelivery: false,
-        icon: 'Truck',
-      },
-      {
-        type: 'express_air',
-        label: 'Express Air Courier',
-        description: 'Air shipping for urgent delivery — 1 to 2 working days',
-        estimatedDays: '1-2 days',
-        available: true,
-        cost: expressAirShippingCost(weightGrams),
-        freeDelivery: false,
-        icon: 'Plane',
-      }
-    );
-  }
+  // 2) Local Same-Day Delivery — only for Patna local pincodes
+  const localCost = localShippingCost(weightGrams, orderSubtotal);
+  methods.push({
+    type: 'local',
+    label: 'Local Same-Day Delivery',
+    description: 'Delivery via in-house team — within 2-6 hours',
+    estimatedDays: '2-6 hours',
+    available: valid && local,
+    cost: localCost,
+    freeDelivery: localCost === 0,
+    icon: 'Bike',
+  });
+
+  // 3) Express Delivery (Air) — only for outstation pincodes
+  methods.push({
+    type: 'express_air',
+    label: 'Express Delivery',
+    description: 'Air shipping for urgent delivery — 1 to 2 working days',
+    estimatedDays: '1-2 days',
+    available: valid && !local,
+    cost: expressAirShippingCost(weightGrams),
+    freeDelivery: false,
+    icon: 'Plane',
+  });
+
+  // 4) National Delivery (Surface) — only for outstation pincodes
+  methods.push({
+    type: 'standard',
+    label: 'National Delivery',
+    description: 'Surface courier — 3 to 5 working days',
+    estimatedDays: '3-5 days',
+    available: valid && !local,
+    cost: standardShippingCost(weightGrams),
+    freeDelivery: false,
+    icon: 'Truck',
+  });
 
   return methods;
 }
