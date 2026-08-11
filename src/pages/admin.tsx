@@ -899,7 +899,7 @@ export default function AdminPage() {
                         <Label className="text-xs">Firebase Phone Auth Enabled (true/false)</Label>
                         <Input value={settingsForm.firebase_phone_auth_enabled ?? ''} onChange={(e) => setSettingsForm({ ...settingsForm, firebase_phone_auth_enabled: e.target.value })} placeholder="false" />
                       </div>
-                      <p className="mt-2 text-xs text-muted-foreground">Set to 'true' when Firebase Phone Auth is activated. Currently using dummy OTP mode (code: 123456).</p>
+                      <p className="mt-2 text-xs text-muted-foreground">Set to 'true' when Firebase Phone Auth is activated. Supabase Phone Auth is used by default.</p>
                     </div>
                   </div>
                 </CardContent>

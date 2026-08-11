@@ -35,7 +35,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { useCart } from '@/lib/cart-context';
-import { useAuth, DUMMY_OTP_CODE } from '@/lib/auth-context';
+import { useAuth } from '@/lib/auth-context';
 import { supabase, type Address, type Order } from '@/lib/supabase';
 import { formatINR } from '@/lib/pricing';
 import { siteConfig, advancePercentage } from '@/lib/site-config';
@@ -50,7 +50,7 @@ type CheckoutSection = 'auth' | 'address' | 'delivery' | 'payment' | 'review';
 
 export default function CheckoutPage() {
   const navigate = useNavigate();
-  const { user, profile, signInDummy } = useAuth();
+  const { user, profile, sendPhoneOtp, verifyPhoneOtp } = useAuth();
   const {
     items,
     coupon,
@@ -143,23 +143,22 @@ export default function CheckoutPage() {
   // --- Load addresses when user is available ---
   useEffect(() => {
     if (!user) return;
-    // For dummy auth, we can't query addresses by user_id from Supabase RLS.
-    // Instead, use localStorage to persist addresses per user.
-    const addrKey = `op4u_addresses_${user.id}`;
-    const stored = localStorage.getItem(addrKey);
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored) as Address[];
-        setAddresses(parsed);
-        const def = parsed.find((a) => a.is_default) ?? parsed[0];
-        if (def) setSelectedAddress(def.id);
-        else setUseNewAddress(true);
-      } catch {
-        setUseNewAddress(true);
-      }
-    } else {
-      setUseNewAddress(true);
-    }
+    // Fetch saved addresses from Supabase (RLS allows user to see own)
+    supabase
+      .from('addresses')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('is_default', { ascending: false })
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          setAddresses(data as Address[]);
+          const def = data.find((a) => a.is_default) ?? data[0];
+          if (def) setSelectedAddress(def.id);
+          else setUseNewAddress(true);
+        } else {
+          setUseNewAddress(true);
+        }
+      });
     // Pre-fill name/phone/email from profile
     if (profile) {
       setNewAddr((prev) => ({
@@ -172,7 +171,7 @@ export default function CheckoutPage() {
   }, [user, profile]);
 
   // --- Auto-scroll to active section ---
-  const sectionRefs: Record<CheckoutSection, HTMLDivElement | null> = {
+  const sectionRefs: Record<CheckoutSection, HTMLElement | null> = {
     auth: null,
     address: null,
     delivery: null,
@@ -181,41 +180,39 @@ export default function CheckoutPage() {
   };
 
   // --- Phone OTP handlers ---
-  const handleSendOtp = () => {
+  const handleSendOtp = async () => {
     const cleaned = phoneInput.replace(/\D/g, '');
     if (cleaned.length !== 10) {
       toast.error('Enter a valid 10-digit mobile number.');
       return;
     }
     setAuthBusy(true);
-    // Simulate OTP send
-    setTimeout(() => {
-      setAuthBusy(false);
-      setOtpSent(true);
-      setAuthStep('otp');
-      setOtpTimer(30);
-      toast.success(`OTP sent to +91 ${cleaned}. (Demo OTP: ${DUMMY_OTP_CODE})`);
-    }, 800);
+    const { error } = await sendPhoneOtp(cleaned, 'checkout-recaptcha-container');
+    setAuthBusy(false);
+    if (error) {
+      toast.error(error);
+      return;
+    }
+    setOtpSent(true);
+    setAuthStep('otp');
+    setOtpTimer(30);
+    toast.success('OTP sent to +91 ' + cleaned);
   };
 
-  const handleVerifyOtp = () => {
+  const handleVerifyOtp = async () => {
     if (otpInput.length !== 6) {
       toast.error('Enter the 6-digit OTP.');
       return;
     }
     setAuthBusy(true);
-    // Accept any 6-digit OTP or the dummy code
-    setTimeout(async () => {
-      setAuthBusy(false);
-      if (otpInput === DUMMY_OTP_CODE || /^\d{6}$/.test(otpInput)) {
-        setAuthStep('done');
-        const phone = `+91${phoneInput.replace(/\D/g, '')}`;
-        await signInDummy({ phone }, fullName || undefined);
-        toast.success('Login successful!');
-      } else {
-        toast.error('Invalid OTP. Please try again.');
-      }
-    }, 600);
+    const { error } = await verifyPhoneOtp(otpInput);
+    setAuthBusy(false);
+    if (error) {
+      toast.error(error);
+      return;
+    }
+    setAuthStep('done');
+    toast.success('Login successful!');
   };
 
   // --- Screenshot upload handler ---
@@ -369,10 +366,10 @@ export default function CheckoutPage() {
 
       const order = data as Order;
 
-      // Save address to localStorage for dummy-auth users
+      // Save address to Supabase for future use
       if (useNewAddress) {
-        const newAddrRecord: Address = {
-          id: `addr-${Date.now()}`,
+        const newAddrRecord = {
+          id: crypto.randomUUID(),
           user_id: user.id,
           label: 'Checkout',
           name: newAddr.name,
@@ -387,12 +384,12 @@ export default function CheckoutPage() {
           state: newAddr.state,
           pincode: newAddr.pincode,
           is_default: addresses.length === 0,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
         };
-        const updated = [newAddrRecord, ...addresses];
-        setAddresses(updated);
-        localStorage.setItem(`op4u_addresses_${user.id}`, JSON.stringify(updated));
+        try {
+          await supabase.from('addresses').insert(newAddrRecord);
+        } catch {
+          // Non-blocking
+        }
       }
 
       // Insert status log
@@ -569,6 +566,9 @@ export default function CheckoutPage() {
                   )}
                 </div>
               )}
+
+              {/* Hidden reCAPTCHA container for Firebase Phone Auth */}
+              {!user && <div id="checkout-recaptcha-container" className="min-h-[1px]" />}
 
               {user && (
                 <div className="flex items-center gap-3 rounded-lg bg-emerald-500/10 p-4">

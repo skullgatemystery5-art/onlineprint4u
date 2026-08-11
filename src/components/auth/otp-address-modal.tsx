@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
-import { useAuth, DUMMY_OTP_CODE } from '@/lib/auth-context';
+import { useAuth } from '@/lib/auth-context';
 
 type OtpAddressModalProps = {
   open: boolean;
@@ -16,8 +16,10 @@ type OtpAddressModalProps = {
 
 type Step = 'details' | 'otp';
 
+const RECAPTCHA_CONTAINER_ID = 'otp-address-recaptcha-container';
+
 export function OtpAddressModal({ open, onClose, onSuccess, title, description }: OtpAddressModalProps) {
-  const { signInDummy } = useAuth();
+  const { sendPhoneOtp, verifyPhoneOtp } = useAuth();
   const [step, setStep] = useState<Step>('details');
   const [loading, setLoading] = useState(false);
 
@@ -43,30 +45,36 @@ export function OtpAddressModal({ open, onClose, onSuccess, title, description }
   const pincodeValid = /^\d{6}$/.test(pincode);
   const detailsValid = phoneValid && fullName.trim() && line1.trim() && city.trim() && pincodeValid && stateVal.trim();
 
-  const proceedToOtp = () => {
+  const proceedToOtp = async () => {
     if (!detailsValid) {
       toast.error('Please fill in all fields correctly.');
       return;
     }
+    setLoading(true);
+    const { error } = await sendPhoneOtp(phone, RECAPTCHA_CONTAINER_ID);
+    setLoading(false);
+    if (error) {
+      toast.error(error);
+      return;
+    }
     setStep('otp');
-    toast.success(`Enter code ${DUMMY_OTP_CODE} to verify (demo mode).`);
+    toast.success('OTP sent to your phone number.');
   };
 
   const verifyAndLogin = async () => {
-    if (otp !== DUMMY_OTP_CODE) {
-      toast.error(`Enter code ${DUMMY_OTP_CODE} to verify (demo mode).`);
+    if (otp.length !== 6) {
+      toast.error('Please enter the 6-digit code sent to your phone.');
       return;
     }
     setLoading(true);
-    try {
-      await signInDummy({ phone }, fullName);
-      toast.success('Verified! You are logged in.');
-      onSuccess();
-    } catch {
-      toast.error('Verification failed. Please try again.');
-    } finally {
-      setLoading(false);
+    const { error } = await verifyPhoneOtp(otp);
+    setLoading(false);
+    if (error) {
+      toast.error(error);
+      return;
     }
+    toast.success('Verified! You are logged in.');
+    onSuccess();
   };
 
   return (
@@ -92,7 +100,7 @@ export function OtpAddressModal({ open, onClose, onSuccess, title, description }
               </div>
               <h2 className="font-display text-xl font-bold">{title ?? 'Delivery Details'}</h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                {description ?? 'Enter your WhatsApp number and delivery address. Use code 123456 to verify (demo mode).'}
+                {description ?? 'Enter your WhatsApp number and delivery address. An OTP will be sent to verify your phone.'}
               </p>
             </div>
 
@@ -157,7 +165,7 @@ export function OtpAddressModal({ open, onClose, onSuccess, title, description }
               disabled={!detailsValid || loading}
               onClick={proceedToOtp}
             >
-              <Phone className="h-4 w-4" />
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Phone className="h-4 w-4" />}
               Continue
               <ArrowRight className="h-4 w-4" />
             </Button>
@@ -172,7 +180,7 @@ export function OtpAddressModal({ open, onClose, onSuccess, title, description }
               </div>
               <h2 className="font-display text-xl font-bold">Verify OTP</h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                Enter code <span className="font-bold text-foreground">123456</span> to verify your number (demo mode).
+                Enter the 6-digit code sent to <span className="font-bold text-foreground">+91 {phone}</span>
               </p>
             </div>
 
@@ -182,7 +190,7 @@ export function OtpAddressModal({ open, onClose, onSuccess, title, description }
                 type="tel"
                 value={otp}
                 onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                placeholder="Enter 123456"
+                placeholder="6-digit code"
                 className="text-center text-lg tracking-[0.5em]"
                 maxLength={6}
                 autoFocus
@@ -200,6 +208,9 @@ export function OtpAddressModal({ open, onClose, onSuccess, title, description }
             </div>
           </div>
         )}
+
+        {/* Hidden reCAPTCHA container for Firebase Phone Auth */}
+        <div id={RECAPTCHA_CONTAINER_ID} className="mt-2 min-h-[1px]" />
       </div>
     </div>
   );

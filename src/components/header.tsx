@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/auth-context';
 import { useCart } from '@/lib/cart-context';
 import { cn } from '@/lib/utils';
+import { HeaderAuthModal } from '@/components/header-auth-modal';
 
 const navLinks = [
   { href: '/#why-us', label: 'Why Us' },
@@ -20,6 +21,8 @@ const navLinks = [
 export function Header() {
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authModalMode, setAuthModalMode] = useState<'signin' | 'signup'>('signin');
   const location = useLocation();
   const navigate = useNavigate();
   const { user, profile, signOut, isAdmin } = useAuth();
@@ -48,6 +51,16 @@ export function Header() {
     } else {
       navigate(href);
     }
+  };
+
+  const openSignIn = () => {
+    setAuthModalMode('signin');
+    setAuthModalOpen(true);
+  };
+
+  const openSignUp = () => {
+    setAuthModalMode('signup');
+    setAuthModalOpen(true);
   };
 
   return (
@@ -115,18 +128,14 @@ export function Header() {
             </div>
           ) : (
             <div className="flex items-center gap-1.5">
-              <Link to="/login">
-                <Button size="sm" variant="ghost" className="gap-1.5">
-                  <LogIn className="h-4 w-4" />
-                  Sign In
-                </Button>
-              </Link>
-              <Link to="/signup">
-                <Button size="sm" className="gap-1.5">
-                  <UserPlus className="h-4 w-4" />
-                  Sign Up
-                </Button>
-              </Link>
+              <Button size="sm" variant="ghost" className="gap-1.5" onClick={openSignIn}>
+                <LogIn className="h-4 w-4" />
+                Sign In
+              </Button>
+              <Button size="sm" className="gap-1.5" onClick={openSignUp}>
+                <UserPlus className="h-4 w-4" />
+                Sign Up
+              </Button>
             </div>
           )}
         </div>
@@ -186,22 +195,31 @@ export function Header() {
                 </>
               ) : (
                 <div className="space-y-2">
-                  <Link to="/login" onClick={() => setOpen(false)}>
-                    <Button variant="outline" className="w-full gap-1.5">
-                      <LogIn className="h-4 w-4" /> Sign In
-                    </Button>
-                  </Link>
-                  <Link to="/signup" onClick={() => setOpen(false)}>
-                    <Button className="w-full gap-1.5">
-                      <UserPlus className="h-4 w-4" /> Sign Up
-                    </Button>
-                  </Link>
+                  <Button
+                    variant="outline"
+                    className="w-full gap-1.5"
+                    onClick={() => { setOpen(false); openSignIn(); }}
+                  >
+                    <LogIn className="h-4 w-4" /> Sign In
+                  </Button>
+                  <Button
+                    className="w-full gap-1.5"
+                    onClick={() => { setOpen(false); openSignUp(); }}
+                  >
+                    <UserPlus className="h-4 w-4" /> Sign Up
+                  </Button>
                 </div>
               )}
             </div>
           </nav>
         </div>
       )}
+
+      <HeaderAuthModal
+        open={authModalOpen}
+        onClose={() => setAuthModalOpen(false)}
+        mode={authModalMode}
+      />
     </header>
   );
 }
