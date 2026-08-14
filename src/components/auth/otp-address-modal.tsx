@@ -36,6 +36,8 @@ export function OtpAddressModal({ open, onClose, onSuccess, title, description }
       setStep('details');
       setOtp('');
       setLoading(false);
+      const container = document.getElementById(RECAPTCHA_CONTAINER_ID);
+      if (container) container.innerHTML = '';
     }
   }, [open]);
 

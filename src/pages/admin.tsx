@@ -22,6 +22,7 @@ import {
   ArrowLeft,
   Settings,
   Save,
+  Loader2,
 } from 'lucide-react';
 import { Header } from '@/components/header';
 import { Footer } from '@/components/footer';
@@ -63,6 +64,9 @@ export default function AdminPage() {
   const [editingShipping, setEditingShipping] = useState<ShippingRate | null>(null);
   const [editingCoupon, setEditingCoupon] = useState<Coupon | null>(null);
   const [showCouponForm, setShowCouponForm] = useState(false);
+  const [siteSettings, setSiteSettings] = useState<Record<string, string>>({});
+  const [settingsForm, setSettingsForm] = useState<Record<string, string>>({});
+  const [savingSettings, setSavingSettings] = useState(false);
   const [couponForm, setCouponForm] = useState({
     code: '',
     description: '',
@@ -821,7 +825,7 @@ export default function AdminPage() {
                       <div className="rounded-xl bg-muted/50 p-4">
                         <p className="text-xs text-muted-foreground">Razorpay Orders</p>
                         <p className="font-display text-2xl font-bold">
-                          {orders.filter((o) => o.payment_method === 'razorpay').length}
+                          {orders.filter((o) => o.payment_method === 'advance' || o.payment_method === 'full_upi').length}
                         </p>
                       </div>
                       <div className="rounded-xl bg-muted/50 p-4">

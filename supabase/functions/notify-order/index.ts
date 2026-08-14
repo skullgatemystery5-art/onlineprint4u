@@ -1,14 +1,33 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
+const ALLOWED_ORIGINS = [
+  "https://onlineprint4u.in",
+  "https://www.onlineprint4u.in",
+  "http://localhost:5173",
+  "http://localhost:4173",
+];
+
+const corsHeaders = (origin: string | null) => {
+  const headers: Record<string, string> = {
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
+    "Access-Control-Max-Age": "86400",
+  };
+  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+    headers["Access-Control-Allow-Origin"] = origin;
+    headers["Vary"] = "Origin";
+  } else {
+    headers["Access-Control-Allow-Origin"] = "*";
+  }
+  return headers;
 };
 
 Deno.serve(async (req: Request) => {
+  const origin = req.headers.get("Origin");
+  const cors = corsHeaders(origin);
+
   if (req.method === "OPTIONS") {
-    return new Response(null, { status: 200, headers: corsHeaders });
+    return new Response(null, { status: 200, headers: cors });
   }
 
   try {
@@ -34,17 +53,16 @@ Deno.serve(async (req: Request) => {
       `TOTAL: Rs. ${order?.total?.toFixed(2)}\n\n` +
       `Process this order promptly.`;
 
-    // Email logging only — no external SMTP or env vars
     console.log(`[MAIL] Order notification for ${ownerEmail}:\n${emailBody}`);
 
     return new Response(
       JSON.stringify({ success: true, message: "Notification processed" }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 200, headers: { ...cors, "Content-Type": "application/json" } }
     );
   } catch (err) {
     return new Response(
       JSON.stringify({ success: false, error: String(err) }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 500, headers: { ...corsHeaders(req.headers.get("Origin")), "Content-Type": "application/json" } }
     );
   }
 });

@@ -8,7 +8,7 @@ import {
   onAuthStateChanged,
   signOut as firebaseSignOut,
 } from 'firebase/auth';
-import { firebaseAuth } from './firebase';
+import { firebaseAuth, isFirebaseConfigured } from './firebase';
 
 type AuthContextType = {
   user: User | null;
@@ -102,21 +102,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     );
 
     // Sync Firebase auth state — if a Firebase session exists on reload,
-    // bridge it to Supabase.
-    const firebaseUnsub = onAuthStateChanged(firebaseAuth, async (fbUser) => {
-      if (fbUser && !session) {
-        try {
-          const idToken = await fbUser.getIdToken();
-          await bridgeToSupabase(idToken);
-        } catch {
-          // Non-blocking — user can re-authenticate
+    // bridge it to Supabase. Skip entirely if Firebase isn't configured.
+    let firebaseUnsub: (() => void) | undefined;
+    if (isFirebaseConfigured && firebaseAuth) {
+      firebaseUnsub = onAuthStateChanged(firebaseAuth, async (fbUser) => {
+        if (fbUser && !session) {
+          try {
+            const idToken = await fbUser.getIdToken();
+            await bridgeToSupabase(idToken);
+          } catch {
+            // Non-blocking — user can re-authenticate
+          }
         }
-      }
-    });
+      });
+    }
 
     return () => {
       authListener.subscription.unsubscribe();
-      firebaseUnsub();
+      firebaseUnsub?.();
     };
   }, [fetchProfile, session]);
 
@@ -158,6 +161,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const sendPhoneOtp = useCallback(
     async (phone: string, recaptchaContainerId: string): Promise<{ error: string | null }> => {
+      if (!isFirebaseConfigured || !firebaseAuth) {
+        return { error: 'Phone OTP is not configured. Please use email login.' };
+      }
       const fullPhone = phone.startsWith('+') ? phone : `+91${phone}`;
       try {
         // Clean up any existing verifier
@@ -271,10 +277,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const signOut = useCallback(async () => {
-    try {
-      await firebaseSignOut(firebaseAuth);
-    } catch {
-      // ignore firebase errors on signout
+    if (isFirebaseConfigured && firebaseAuth) {
+      try {
+        await firebaseSignOut(firebaseAuth);
+      } catch {
+        // ignore firebase errors on signout
+      }
     }
     if (recaptchaVerifier) {
       try {

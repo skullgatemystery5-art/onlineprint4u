@@ -1,9 +1,25 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.57.4';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Client-Info, Apikey',
+const ALLOWED_ORIGINS = [
+  'https://onlineprint4u.in',
+  'https://www.onlineprint4u.in',
+  'http://localhost:5173',
+  'http://localhost:4173',
+];
+
+const corsHeaders = (origin: string | null) => {
+  const headers: Record<string, string> = {
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Client-Info, Apikey',
+    'Access-Control-Max-Age': '86400',
+  };
+  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+    headers['Access-Control-Allow-Origin'] = origin;
+    headers['Vary'] = 'Origin';
+  } else {
+    headers['Access-Control-Allow-Origin'] = '*';
+  }
+  return headers;
 };
 
 interface FirebaseTokenResponse {
@@ -17,8 +33,11 @@ interface FirebaseTokenResponse {
 }
 
 Deno.serve(async (req: Request) => {
+  const origin = req.headers.get('Origin');
+  const cors = corsHeaders(origin);
+
   if (req.method === 'OPTIONS') {
-    return new Response(null, { status: 200, headers: corsHeaders });
+    return new Response(null, { status: 200, headers: cors });
   }
 
   try {
@@ -26,17 +45,15 @@ Deno.serve(async (req: Request) => {
     if (!firebaseToken) {
       return new Response(
         JSON.stringify({ error: 'Missing firebaseToken' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Firebase API key is a public identifier (safe for client-side).
-    // Accept it from the request body, falling back to env if present.
     const apiKey = firebaseApiKey || Deno.env.get('VITE_FIREBASE_API_KEY');
     if (!apiKey) {
       return new Response(
         JSON.stringify({ error: 'Firebase API key not provided' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -53,7 +70,7 @@ Deno.serve(async (req: Request) => {
       const errBody = await verifyRes.text();
       return new Response(
         JSON.stringify({ error: `Firebase token verification failed: ${verifyRes.status}`, detail: errBody }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -61,7 +78,7 @@ Deno.serve(async (req: Request) => {
     if (verified.error || !verified.users?.length) {
       return new Response(
         JSON.stringify({ error: 'Invalid Firebase token — no user found' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -73,20 +90,17 @@ Deno.serve(async (req: Request) => {
     if (!phone) {
       return new Response(
         JSON.stringify({ error: 'No phone number associated with this Firebase account' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Use service role to create/mint a Supabase session for this user.
-    // We upsert a profile keyed by phone, then generate a custom JWT signed
-    // with the service role key that Supabase auth will accept.
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 
     if (!supabaseUrl || !serviceRoleKey) {
       return new Response(
         JSON.stringify({ error: 'Supabase server credentials not configured' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -94,19 +108,8 @@ Deno.serve(async (req: Request) => {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    // Find existing Supabase user by phone, or create one.
-    // Supabase doesn't have a direct admin.createUser by phone, so we use
-    // a deterministic approach: sign in with the Firebase uid as the password
-    // on a fixed email derived from the phone. This gives us a real session.
-
-    // Strategy: create a Supabase user with email = phone@firebase.local
-    // and a random secure password stored nowhere (we use admin linkIdentity
-    // alternative: just sign in with OTP-like admin approach).
-    // The cleanest supported approach: use admin.generateLink or createUser.
-
     const derivedEmail = `${phone.replace(/[^0-9]/g, '')}@phone.local`;
 
-    // Try to create the user; if exists, fetch them.
     const { data: created, error: createErr } = await serviceClient.auth.admin.createUser({
       email: derivedEmail,
       email_confirm: true,
@@ -118,7 +121,6 @@ Deno.serve(async (req: Request) => {
     let supabaseUserId: string;
 
     if (createErr) {
-      // User likely exists — list users by phone to find them
       const { data: userList, error: listErr } = await serviceClient.auth.admin.listUsers({
         page: 1,
         perPage: 1000,
@@ -127,7 +129,7 @@ Deno.serve(async (req: Request) => {
       if (listErr) {
         return new Response(
           JSON.stringify({ error: 'Failed to locate existing user' }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } }
         );
       }
 
@@ -135,7 +137,7 @@ Deno.serve(async (req: Request) => {
       if (!existing) {
         return new Response(
           JSON.stringify({ error: 'Could not create or find Supabase user for this phone' }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } }
         );
       }
       supabaseUserId = existing.id;
@@ -143,7 +145,6 @@ Deno.serve(async (req: Request) => {
       supabaseUserId = created.user.id;
     }
 
-    // Upsert profile
     await serviceClient.from('profiles').upsert({
       id: supabaseUserId,
       email,
@@ -152,13 +153,6 @@ Deno.serve(async (req: Request) => {
       role: 'user',
     }, { onConflict: 'id' });
 
-    // Generate a Supabase access token for this user using admin.generateLink
-    // with 'magiclink' then extracting the token — but that's complex.
-    // Simpler: sign in with the service role and return the user id + a
-    // short-lived session by generating a signed JWT.
-    // The most reliable approach: use admin.updateUserById to set a known
-    // password, then sign in with password to get a real session.
-
     const tempPassword = `Fb${fbUser.localId.slice(0, 12)}!${Date.now().toString(36)}`;
     await serviceClient.auth.admin.updateUserById(supabaseUserId, {
       password: tempPassword,
@@ -166,7 +160,6 @@ Deno.serve(async (req: Request) => {
       phone_confirm: true,
     });
 
-    // Now sign in with the temp password to get a real session
     const anonClient = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY') ?? '', {
       auth: { autoRefreshToken: false, persistSession: false },
     });
@@ -179,11 +172,10 @@ Deno.serve(async (req: Request) => {
     if (signInErr || !signInData.session) {
       return new Response(
         JSON.stringify({ error: 'Failed to create Supabase session' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Rotate the temp password so it can't be reused
     await serviceClient.auth.admin.updateUserById(supabaseUserId, {
       password: `Rot${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}!${Date.now().toString(36)}`,
     });
@@ -200,12 +192,12 @@ Deno.serve(async (req: Request) => {
           email,
         },
       }),
-      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { status: 200, headers: { ...cors, 'Content-Type': 'application/json' } }
     );
   } catch (err) {
     return new Response(
-      JSON.stringify({ error: err.message || 'Internal server error' }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      JSON.stringify({ error: (err as Error).message || 'Internal server error' }),
+      { status: 500, headers: { ...corsHeaders(origin), 'Content-Type': 'application/json' } }
     );
   }
 });
