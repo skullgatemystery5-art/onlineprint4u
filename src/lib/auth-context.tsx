@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { supabase, type Profile } from './supabase';
-import type { User, Session } from '@supabase/supabase-js';
+import type { User as FirebaseUser } from 'firebase/auth';
 import {
   signInWithPhoneNumber,
   RecaptchaVerifier,
@@ -10,9 +10,15 @@ import {
 } from 'firebase/auth';
 import { firebaseAuth, isFirebaseConfigured } from './firebase';
 
+type AuthUser = {
+  uid: string;
+  phoneNumber: string | null;
+  email: string | null;
+  displayName: string | null;
+};
+
 type AuthContextType = {
-  user: User | null;
-  session: Session | null;
+  user: AuthUser | null;
   profile: Profile | null;
   loading: boolean;
   isAdmin: boolean;
@@ -26,7 +32,6 @@ type AuthContextType = {
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
-  session: null,
   profile: null,
   loading: true,
   isAdmin: false,
@@ -38,9 +43,17 @@ const AuthContext = createContext<AuthContextType>({
   verifyEmailOtp: async () => ({ error: 'Not initialized' }),
 });
 
+function toAuthUser(fbUser: FirebaseUser): AuthUser {
+  return {
+    uid: fbUser.uid,
+    phoneNumber: fbUser.phoneNumber,
+    email: fbUser.email,
+    displayName: fbUser.displayName,
+  };
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
@@ -56,117 +69,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const refreshProfile = useCallback(async () => {
-    if (user) await fetchProfile(user.id);
+    if (user) await fetchProfile(user.uid);
   }, [user, fetchProfile]);
 
-  const setSupabaseSession = useCallback(
-    async (accessToken: string, refreshToken: string) => {
-      const { data, error } = await supabase.auth.setSession({
-        access_token: accessToken,
-        refresh_token: refreshToken,
-      });
-      if (error) {
-        console.error('Failed to set Supabase session:', error.message);
-        return;
-      }
-      setSession(data.session);
-      setUser(data.session?.user ?? null);
-      if (data.session?.user) {
-        await fetchProfile(data.session.user.id);
-      }
-    },
-    [fetchProfile]
-  );
-
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setUser(data.session?.user ?? null);
-      if (data.session?.user) {
-        fetchProfile(data.session.user.id).finally(() => setLoading(false));
+    if (!isFirebaseConfigured || !firebaseAuth) {
+      setLoading(false);
+      return;
+    }
+
+    const unsub = onAuthStateChanged(firebaseAuth, async (fbUser) => {
+      if (fbUser) {
+        const authUser = toAuthUser(fbUser);
+        setUser(authUser);
+        await fetchProfile(authUser.uid);
+        setLoading(false);
       } else {
+        setUser(null);
+        setProfile(null);
         setLoading(false);
       }
     });
 
-    const { data: authListener } = supabase.auth.onAuthStateChange(
-      (_event, newSession) => {
-        setSession(newSession);
-        setUser(newSession?.user ?? null);
-        if (newSession?.user) {
-          fetchProfile(newSession.user.id);
-        } else {
-          setProfile(null);
-        }
-      }
-    );
-
-    // Sync Firebase auth state — if a Firebase session exists on reload,
-    // bridge it to Supabase. Skip entirely if Firebase isn't configured.
-    let firebaseUnsub: (() => void) | undefined;
-    if (isFirebaseConfigured && firebaseAuth) {
-      firebaseUnsub = onAuthStateChanged(firebaseAuth, async (fbUser) => {
-        if (fbUser && !session) {
-          try {
-            const idToken = await fbUser.getIdToken();
-            await bridgeToSupabase(idToken);
-          } catch {
-            // Non-blocking — user can re-authenticate
-          }
-        }
-      });
-    }
-
-    return () => {
-      authListener.subscription.unsubscribe();
-      firebaseUnsub?.();
-    };
-  }, [fetchProfile, session]);
-
-  const bridgeToSupabase = useCallback(
-    async (firebaseToken: string): Promise<{ error: string | null }> => {
-      const firebaseApiKey = import.meta.env.VITE_FIREBASE_API_KEY;
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const functionUrl = `${supabaseUrl}/functions/v1/firebase-auth-bridge`;
-
-      try {
-        const res = await fetch(functionUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          },
-          body: JSON.stringify({
-            firebaseToken,
-            firebaseApiKey,
-          }),
-        });
-
-        if (!res.ok) {
-          const errBody = await res.json().catch(() => ({}));
-          return { error: errBody.error || `Bridge failed (${res.status})` };
-        }
-
-        const data = await res.json();
-        if (data.error) return { error: data.error };
-
-        await setSupabaseSession(data.access_token, data.refresh_token);
-        return { error: null };
-      } catch {
-        return { error: 'Network error contacting auth bridge' };
-      }
-    },
-    [setSupabaseSession]
-  );
+    return () => unsub();
+  }, [fetchProfile]);
 
   const sendPhoneOtp = useCallback(
     async (phone: string, recaptchaContainerId: string): Promise<{ error: string | null }> => {
       if (!isFirebaseConfigured || !firebaseAuth) {
-        return { error: 'Phone OTP is not configured. Please use email login.' };
+        return { error: 'Phone OTP is not configured. Please contact support.' };
       }
       const fullPhone = phone.startsWith('+') ? phone : `+91${phone}`;
       try {
-        // Clean up any existing verifier
         if (recaptchaVerifier) {
           try {
             recaptchaVerifier.clear();
@@ -185,7 +119,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: null };
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Failed to send OTP';
-        // Clean up failed verifier
         if (recaptchaVerifier) {
           try {
             recaptchaVerifier.clear();
@@ -210,10 +143,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!fbUserCred.user) {
           return { error: 'Verification failed — no user returned' };
         }
-        const idToken = await fbUserCred.user.getIdToken();
-        const { error: bridgeError } = await bridgeToSupabase(idToken);
-        if (bridgeError) return { error: bridgeError };
-        // Clean up
+
+        const authUser = toAuthUser(fbUserCred.user);
+        setUser(authUser);
+
+        // Create or update profile in Supabase using Firebase UID
+        const phone = authUser.phoneNumber ?? '';
+        const displayName = authUser.displayName ?? 'User';
+        const email = authUser.email ?? '';
+
+        await supabase.from('profiles').upsert({
+          id: authUser.uid,
+          email,
+          full_name: displayName,
+          phone,
+          role: 'user',
+        }, { onConflict: 'id' });
+
+        await fetchProfile(authUser.uid);
+
         try {
           recaptchaVerifier?.clear();
         } catch {
@@ -223,9 +171,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setConfirmationResult(null);
         return { error: null };
       } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Invalid or expired OTP';
-        // Map Firebase error codes to friendly messages
-        const error = err as { code?: string };
+        const error = err as { code?: string; message?: string };
         if (error.code === 'auth/invalid-verification-code') {
           return { error: 'Invalid verification code. Please check and try again.' };
         }
@@ -235,45 +181,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (error.code === 'auth/too-many-requests') {
           return { error: 'Too many attempts. Please wait a moment and try again.' };
         }
-        return { error: msg };
+        return { error: error.message || 'Invalid or expired OTP' };
       }
     },
-    [confirmationResult, bridgeToSupabase, recaptchaVerifier]
+    [confirmationResult, recaptchaVerifier, fetchProfile]
   );
 
   const sendEmailOtp = useCallback(
-    async (email: string): Promise<{ error: string | null }> => {
-      const { error } = await supabase.auth.signInWithOtp({
-        email,
-        options: { emailRedirectTo: window.location.origin },
-      });
-      if (error) return { error: error.message };
-      return { error: null };
+    async (_email: string): Promise<{ error: string | null }> => {
+      return { error: 'Email login is not available. Please use phone number login.' };
     },
     []
   );
 
   const verifyEmailOtp = useCallback(
-    async (email: string, token: string): Promise<{ error: string | null }> => {
-      const { data, error } = await supabase.auth.verifyOtp({
-        email,
-        token,
-        type: 'email',
-      });
-      if (error) return { error: error.message };
-      if (data.user) {
-        await supabase.from('profiles').upsert({
-          id: data.user.id,
-          email: data.user.email ?? email,
-          full_name: data.user.user_metadata?.full_name ?? 'User',
-          phone: data.user.phone ?? '',
-          role: 'user',
-        }, { onConflict: 'id' });
-        await fetchProfile(data.user.id);
-      }
-      return { error: null };
+    async (_email: string, _token: string): Promise<{ error: string | null }> => {
+      return { error: 'Email login is not available. Please use phone number login.' };
     },
-    [fetchProfile]
+    []
   );
 
   const signOut = useCallback(async () => {
@@ -281,7 +206,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         await firebaseSignOut(firebaseAuth);
       } catch {
-        // ignore firebase errors on signout
+        // ignore
       }
     }
     if (recaptchaVerifier) {
@@ -293,9 +218,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setRecaptchaVerifier(null);
     }
     setConfirmationResult(null);
-    await supabase.auth.signOut();
     setUser(null);
-    setSession(null);
     setProfile(null);
   }, [recaptchaVerifier]);
 
@@ -303,7 +226,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     <AuthContext.Provider
       value={{
         user,
-        session,
         profile,
         loading,
         isAdmin: profile?.role === 'admin',

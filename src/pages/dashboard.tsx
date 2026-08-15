@@ -72,13 +72,13 @@ export default function DashboardPage() {
       supabase
         .from('orders')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', user.uid)
         .order('created_at', { ascending: false })
         .then(({ data }) => data as Order[] | null),
       supabase
         .from('addresses')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', user.uid)
         .order('created_at', { ascending: false })
         .then(({ data }) => data as Address[] | null),
     ]).then(([o, a]) => {
@@ -113,7 +113,7 @@ export default function DashboardPage() {
         toast.success('Address updated.');
       } else {
         const { error } = await supabase.from('addresses').insert({
-          user_id: user.id,
+          user_id: user.uid,
           ...addrForm,
         });
         if (error) throw error;
@@ -125,7 +125,7 @@ export default function DashboardPage() {
       const { data } = await supabase
         .from('addresses')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', user.uid)
         .order('created_at', { ascending: false });
       if (data) setAddresses(data as Address[]);
     } catch {

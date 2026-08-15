@@ -1,25 +1,10 @@
-import { supabase, type Order } from './supabase';
+import type { Order } from './supabase';
 import { siteConfig } from './site-config';
 import { buildWhatsAppBillURL } from './whatsapp';
 
 export async function sendOwnerNotifications(order: Order): Promise<void> {
   const ownerWhatsAppUrl = `https://wa.me/${siteConfig.contact.phoneRaw}?text=${encodeURIComponent(buildOwnerWhatsAppMessage(order))}`;
-
-  // Open WhatsApp with order details pre-filled for the owner
   window.open(ownerWhatsAppUrl, '_blank', 'noopener,noreferrer');
-
-  // Send email notification to owner via Supabase edge function
-  try {
-    await supabase.functions.invoke('notify-order', {
-      body: {
-        order,
-        ownerEmail: siteConfig.contact.email,
-        ownerPhone: siteConfig.contact.phoneRaw,
-      },
-    });
-  } catch {
-    // Edge function may not be deployed yet — WhatsApp is the primary channel
-  }
 }
 
 function buildOwnerWhatsAppMessage(order: Order): string {

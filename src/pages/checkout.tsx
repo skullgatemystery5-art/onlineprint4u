@@ -1,15 +1,13 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
   CreditCard,
   Banknote,
-  MapPin,
   Check,
   Loader2,
   Truck,
   ShieldCheck,
-  QrCode,
   Smartphone,
   CheckCircle2,
   Bike,
@@ -20,19 +18,13 @@ import {
   Info,
   MessageCircle,
   Weight,
-  Upload,
-  X,
   Lock,
-  User,
-  Mail,
-  Phone,
 } from 'lucide-react';
 import { Header } from '@/components/header';
 import { Footer } from '@/components/footer';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { useCart } from '@/lib/cart-context';
 import { useAuth } from '@/lib/auth-context';
@@ -43,6 +35,7 @@ import { sendOwnerNotifications } from '@/lib/notify';
 import { cn } from '@/lib/utils';
 import { formatWeight, type CourierType } from '@/lib/shipping';
 import { ShippingPolicyModal } from '@/components/shipping-policy-modal';
+import { initiateRazorpayPayment, isRazorpayConfigured } from '@/lib/razorpay';
 
 type PaymentMethod = 'advance' | 'full_upi';
 
@@ -95,15 +88,9 @@ export default function CheckoutPage() {
 
   // --- Payment state ---
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('advance');
-  const [showQR, setShowQR] = useState(false);
   const [paymentDone, setPaymentDone] = useState(false);
-
-  // --- Screenshot upload state ---
-  const [screenshotFile, setScreenshotFile] = useState<File | null>(null);
-  const [screenshotPreview, setScreenshotPreview] = useState<string | null>(null);
-  const [uploadingScreenshot, setUploadingScreenshot] = useState(false);
-  const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [paymentProcessing, setPaymentProcessing] = useState(false);
+  const [razorpayPaymentId, setRazorpayPaymentId] = useState<string | null>(null);
 
   // --- Order placement ---
   const [placing, setPlacing] = useState(false);
@@ -147,7 +134,7 @@ export default function CheckoutPage() {
     supabase
       .from('addresses')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('user_id', user.uid)
       .order('is_default', { ascending: false })
       .then(({ data }) => {
         if (data && data.length > 0) {
@@ -215,59 +202,41 @@ export default function CheckoutPage() {
     toast.success('Login successful!');
   };
 
-  // --- Screenshot upload handler ---
-  const handleScreenshotSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      toast.error('Please upload an image file (JPG, PNG, etc.)');
+  // --- Razorpay payment handler ---
+  const handleRazorpayPayment = async () => {
+    if (!user) {
+      toast.error('Please log in first.');
       return;
     }
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error('Image must be under 5MB.');
+    if (!isRazorpayConfigured()) {
+      toast.error('Payment gateway is not configured. Please contact support.');
       return;
     }
-    setScreenshotFile(file);
-    setScreenshotPreview(URL.createObjectURL(file));
-    setScreenshotUrl(null);
-  };
-
-  const handleScreenshotUpload = async (): Promise<string | null> => {
-    if (!screenshotFile) return null;
-    setUploadingScreenshot(true);
-    try {
-      const ext = screenshotFile.name.split('.').pop() || 'jpg';
-      const fileName = `screenshot-${Date.now()}.${ext}`;
-      const { error: uploadError } = await supabase.storage
-        .from('payment-screenshots')
-        .upload(fileName, screenshotFile, {
-          cacheControl: '3600',
-          upsert: false,
-          contentType: screenshotFile.type,
-        });
-
-      if (uploadError) throw uploadError;
-
-      const { data: urlData } = supabase.storage
-        .from('payment-screenshots')
-        .getPublicUrl(fileName);
-
-      const publicUrl = urlData.publicUrl;
-      setScreenshotUrl(publicUrl);
-      return publicUrl;
-    } catch {
-      toast.error('Failed to upload screenshot. Please try again.');
-      return null;
-    } finally {
-      setUploadingScreenshot(false);
+    setPaymentProcessing(true);
+    const result = await initiateRazorpayPayment({
+      amount: amountToPayNow,
+      name: 'Online Print 4U',
+      description: paymentMethod === 'advance'
+        ? `50% Advance Payment — Order Total: ${formatINR(totals.total)}`
+        : `Full Payment — Order Total: ${formatINR(totals.total)}`,
+      prefill: {
+        name: profile?.full_name || fullName || '',
+        email: profile?.email || emailInput || newAddr.email || '',
+        contact: profile?.phone || phoneInput || newAddr.phone || '',
+      },
+      notes: {
+        payment_type: paymentMethod,
+        total_order_value: totals.total.toFixed(2),
+      },
+    });
+    setPaymentProcessing(false);
+    if (result.success && result.paymentId) {
+      setRazorpayPaymentId(result.paymentId);
+      setPaymentDone(true);
+      toast.success('Payment successful!');
+    } else {
+      toast.error(result.error || 'Payment failed. Please try again.');
     }
-  };
-
-  const handleRemoveScreenshot = () => {
-    setScreenshotFile(null);
-    setScreenshotPreview(null);
-    setScreenshotUrl(null);
-    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   // --- Place order ---
@@ -307,29 +276,14 @@ export default function CheckoutPage() {
       shippingPin = addr.pincode;
     }
 
-    if (!paymentDone) {
+    if (!paymentDone || !razorpayPaymentId) {
       toast.error('Please complete your payment before placing the order.');
-      return;
-    }
-
-    if (!screenshotFile && !screenshotUrl) {
-      toast.error('Please upload your payment screenshot to confirm the order.');
       return;
     }
 
     setPlacing(true);
 
     try {
-      // Upload screenshot if not already uploaded
-      let finalScreenshotUrl = screenshotUrl;
-      if (!finalScreenshotUrl && screenshotFile) {
-        finalScreenshotUrl = await handleScreenshotUpload();
-        if (!finalScreenshotUrl) {
-          setPlacing(false);
-          return;
-        }
-      }
-
       const orderNumber = `PO4U-${Date.now().toString(36).toUpperCase()}`;
 
       // Determine delivery type label
@@ -340,7 +294,7 @@ export default function CheckoutPage() {
         .from('orders')
         .insert({
           order_number: orderNumber,
-          user_id: user.id,
+          user_id: user.uid,
           items: items,
           subtotal: totals.subtotal,
           discount: totals.discount,
@@ -356,8 +310,9 @@ export default function CheckoutPage() {
           shipping_pincode: shippingPin,
           courier_type: selectedCourier,
           delivery_type_label: deliveryLabel,
-          payment_screenshot_url: finalScreenshotUrl,
+          payment_screenshot_url: null,
           customer_email: shippingEmail || emailInput || null,
+          notes: `Razorpay Payment ID: ${razorpayPaymentId}`,
         })
         .select()
         .single();
@@ -370,7 +325,7 @@ export default function CheckoutPage() {
       if (useNewAddress) {
         const newAddrRecord = {
           id: crypto.randomUUID(),
-          user_id: user.id,
+          user_id: user.uid,
           label: 'Checkout',
           name: newAddr.name,
           phone: newAddr.phone,
@@ -470,7 +425,7 @@ export default function CheckoutPage() {
                 <h2 className="font-display text-lg font-bold">Login / Signup</h2>
                 {user && (
                   <span className="ml-auto rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-600">
-                    Logged in as {user.phone || user.email}
+                    Logged in as {user.phoneNumber || user.email}
                   </span>
                 )}
               </div>
@@ -575,9 +530,9 @@ export default function CheckoutPage() {
                   <CheckCircle2 className="h-5 w-5 text-emerald-600" />
                   <div className="flex-1">
                     <p className="text-sm font-semibold text-emerald-700">
-                      Authenticated as {profile?.full_name || user.user_metadata?.full_name || 'User'}
+                      Authenticated as {profile?.full_name || user.displayName || 'User'}
                     </p>
-                    <p className="text-xs text-emerald-600">{user.phone || user.email}</p>
+                    <p className="text-xs text-emerald-600">{user.phoneNumber || user.email}</p>
                   </div>
                 </div>
               )}
@@ -885,7 +840,7 @@ export default function CheckoutPage() {
               <div className="grid gap-3 sm:grid-cols-2">
                 {/* 50% Advance + 50% COD */}
                 <button
-                  onClick={() => { setPaymentMethod('advance'); setPaymentDone(false); setShowQR(false); }}
+                  onClick={() => { setPaymentMethod('advance'); setPaymentDone(false); setRazorpayPaymentId(null); }}
                   className={cn(
                     'flex items-start gap-3 rounded-xl border-2 p-4 transition-all text-left',
                     paymentMethod === 'advance'
@@ -903,9 +858,9 @@ export default function CheckoutPage() {
                   )}
                 </button>
 
-                {/* 100% Full UPI */}
+                {/* 100% Full Online Payment */}
                 <button
-                  onClick={() => { setPaymentMethod('full_upi'); setPaymentDone(false); setShowQR(false); }}
+                  onClick={() => { setPaymentMethod('full_upi'); setPaymentDone(false); setRazorpayPaymentId(null); }}
                   className={cn(
                     'flex items-start gap-3 rounded-xl border-2 p-4 transition-all text-left',
                     paymentMethod === 'full_upi'
@@ -916,7 +871,7 @@ export default function CheckoutPage() {
                   <Smartphone className="mt-0.5 h-6 w-6 shrink-0 text-primary" />
                   <div className="flex-1">
                     <p className="font-display text-sm font-semibold">100% Full Online Payment</p>
-                    <p className="text-xs text-muted-foreground">Pay {formatINR(totals.total)} via UPI / QR Code</p>
+                    <p className="text-xs text-muted-foreground">Pay {formatINR(totals.total)} via UPI / Card / Net Banking</p>
                   </div>
                   {paymentMethod === 'full_upi' && (
                     <Check className="h-5 w-5 text-primary" />
@@ -926,7 +881,7 @@ export default function CheckoutPage() {
 
               {/* Payment action area */}
               <div className="mt-5 rounded-xl border border-border bg-muted/30 p-5">
-                {!showQR && !paymentDone && (
+                {!paymentDone && (
                   <div className="text-center">
                     <p className="mb-1 text-sm font-medium">
                       Amount to pay now:{' '}
@@ -935,64 +890,23 @@ export default function CheckoutPage() {
                       </span>
                     </p>
                     <p className="mb-4 text-xs text-muted-foreground">
-                      Pay directly via UPI — zero gateway commission
+                      Secure payment via Razorpay — UPI, Cards, Net Banking &amp; Wallets
                     </p>
-                    <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
-                      <a
-                        href={`upi://pay?pa=${encodeURIComponent(siteConfig.payment.upiId)}&pn=${encodeURIComponent(siteConfig.payment.payeeName)}&am=${amountToPayNow.toFixed(2)}&cu=INR`}
-                        className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
-                      >
-                        <Smartphone className="h-4 w-4" /> Pay via UPI App
-                      </a>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="gap-2"
-                        onClick={() => setShowQR(true)}
-                      >
-                        <QrCode className="h-4 w-4" /> Show QR Code
-                      </Button>
-                    </div>
-                    <p className="mt-3 text-xs text-muted-foreground">
-                      UPI ID: <span className="font-mono font-medium text-foreground">{siteConfig.payment.upiId}</span>
+                    <Button
+                      onClick={handleRazorpayPayment}
+                      disabled={paymentProcessing || !user || !selectedCourier}
+                      className="gap-2"
+                      size="lg"
+                    >
+                      {paymentProcessing ? (
+                        <><Loader2 className="h-4 w-4 animate-spin" /> Processing...</>
+                      ) : (
+                        <><CreditCard className="h-4 w-4" /> Pay {formatINR(amountToPayNow)} Now</>
+                      )}
+                    </Button>
+                    <p className="mt-3 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+                      <Lock className="h-3 w-3" /> 100% Secure &amp; Encrypted Payment
                     </p>
-                  </div>
-                )}
-
-                {showQR && !paymentDone && (
-                  <div className="text-center">
-                    <p className="mb-3 text-sm font-medium">Scan this QR code to pay {formatINR(amountToPayNow)}</p>
-                    <div className="mx-auto mb-4 flex h-56 w-56 items-center justify-center rounded-xl border-2 border-border bg-white p-3">
-                      <img
-                        src={siteConfig.payment.qrCodeImage}
-                        alt="UPI QR Code"
-                        className="h-full w-full object-contain"
-                        onError={(e) => {
-                          const target = e.currentTarget;
-                          target.style.display = 'none';
-                          const parent = target.parentElement;
-                          if (parent) {
-                            parent.innerHTML = '<div class="text-center text-xs text-muted-foreground p-4">QR code image not found.<br/>Add your QR image as<br/><span class="font-mono font-medium">public/qr-code.png</span></div>';
-                          }
-                        }}
-                      />
-                    </div>
-                    <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setShowQR(false)}
-                      >
-                        Back
-                      </Button>
-                      <Button
-                        size="sm"
-                        className="gap-2"
-                        onClick={() => setPaymentDone(true)}
-                      >
-                        <Check className="h-4 w-4" /> I've Paid — Confirm Payment
-                      </Button>
-                    </div>
                   </div>
                 )}
 
@@ -1002,8 +916,11 @@ export default function CheckoutPage() {
                     <span className="text-sm font-semibold">
                       Payment confirmed ({formatINR(amountToPayNow)})
                     </span>
+                    <span className="ml-1 text-xs text-muted-foreground">
+                      ID: {razorpayPaymentId?.slice(0, 14)}...
+                    </span>
                     <button
-                      onClick={() => { setPaymentDone(false); setShowQR(false); }}
+                      onClick={() => { setPaymentDone(false); setRazorpayPaymentId(null); }}
                       className="ml-2 text-xs text-muted-foreground hover:underline"
                     >
                       Change
@@ -1011,69 +928,6 @@ export default function CheckoutPage() {
                   </div>
                 )}
               </div>
-            </section>
-
-            {/* ============ SECTION 5: PAYMENT SCREENSHOT UPLOAD ============ */}
-            <section
-              ref={(el) => { sectionRefs.review = el; }}
-              className={cn(
-                'rounded-2xl border-2 bg-card p-6 shadow-sm transition-all',
-                activeSection === 'review' ? 'border-primary' : 'border-border',
-                !paymentDone && 'opacity-50 pointer-events-none'
-              )}
-            >
-              <div className="mb-4 flex items-center gap-3">
-                <div className={cn(
-                  'flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold',
-                  screenshotUrl || screenshotFile ? 'bg-emerald-500 text-white' : 'bg-primary text-primary-foreground'
-                )}>
-                  {screenshotUrl || screenshotFile ? <Check className="h-4 w-4" /> : '5'}
-                </div>
-                <h2 className="font-display text-lg font-bold">Upload Payment Screenshot</h2>
-              </div>
-
-              <p className="mb-4 text-sm text-muted-foreground">
-                Upload the payment receipt/screenshot to confirm your order. This helps us verify your payment quickly.
-              </p>
-
-              {!screenshotPreview && !screenshotUrl ? (
-                <div
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-border p-8 text-center transition-colors hover:border-primary/50 hover:bg-primary/5"
-                >
-                  <Upload className="mb-3 h-10 w-10 text-muted-foreground" />
-                  <p className="text-sm font-medium">Click to upload payment screenshot</p>
-                  <p className="mt-1 text-xs text-muted-foreground">JPG, PNG, or WEBP — max 5MB</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <div className="relative inline-block">
-                    <img
-                      src={screenshotPreview || screenshotUrl || ''}
-                      alt="Payment screenshot"
-                      className="max-h-64 rounded-xl border border-border object-contain"
-                    />
-                    <button
-                      onClick={handleRemoveScreenshot}
-                      className="absolute -right-2 -top-2 flex h-7 w-7 items-center justify-center rounded-full bg-destructive text-white shadow-md transition-colors hover:bg-destructive/90"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
-                  <p className="text-sm font-medium text-emerald-600">
-                    <CheckCircle2 className="mr-1 inline h-4 w-4" />
-                    Screenshot ready to submit
-                  </p>
-                </div>
-              )}
-
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                onChange={handleScreenshotSelect}
-                className="hidden"
-              />
             </section>
 
             {/* ============ ORDER SUMMARY (Sticky at bottom) ============ */}
@@ -1142,17 +996,13 @@ export default function CheckoutPage() {
 
               <Button
                 onClick={handlePlaceOrder}
-                disabled={placing || !paymentDone || !user || !selectedCourier || (!screenshotFile && !screenshotUrl)}
+                disabled={placing || !paymentDone || !user || !selectedCourier}
                 className="mt-4 w-full gap-2"
                 size="lg"
               >
                 {placing ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" /> Placing Order...
-                  </>
-                ) : uploadingScreenshot ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" /> Uploading Screenshot...
                   </>
                 ) : (
                   <>
@@ -1163,11 +1013,6 @@ export default function CheckoutPage() {
               {!paymentDone && (
                 <p className="mt-2 text-center text-xs text-amber-600">
                   Complete payment above to enable ordering
-                </p>
-              )}
-              {paymentDone && !screenshotFile && !screenshotUrl && (
-                <p className="mt-2 text-center text-xs text-amber-600">
-                  Upload payment screenshot to confirm order
                 </p>
               )}
               <p className="mt-3 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">

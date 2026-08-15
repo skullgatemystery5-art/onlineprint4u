@@ -17,7 +17,7 @@ const RECAPTCHA_CONTAINER_ID = 'signup-recaptcha-container';
 
 export default function SignupPage() {
   const navigate = useNavigate();
-  const { sendPhoneOtp, verifyPhoneOtp, sendEmailOtp, verifyEmailOtp } = useAuth();
+  const { user: authUser, sendPhoneOtp, verifyPhoneOtp, sendEmailOtp, verifyEmailOtp } = useAuth();
   const [mode, setMode] = useState<SignupMode>('phone');
   const [step, setStep] = useState<SignupStep>('details');
 
@@ -81,13 +81,12 @@ export default function SignupPage() {
     }
     // Update profile with the name they entered
     try {
-      const { data: userData } = await supabase.auth.getUser();
-      if (userData.user) {
+      if (authUser) {
         await supabase.from('profiles').upsert({
-          id: userData.user.id,
-          email: userData.user.email ?? email,
+          id: authUser.uid,
+          email: authUser.email ?? email,
           full_name: name,
-          phone: userData.user.phone ?? `+91${phone}`,
+          phone: authUser.phoneNumber ?? `+91${phone}`,
           role: 'user',
         }, { onConflict: 'id' });
       }
@@ -96,7 +95,7 @@ export default function SignupPage() {
     }
     toast.success('Account created! Welcome to Online Print 4U.');
     navigate('/dashboard');
-  }, [otp, mode, email, phone, name, verifyEmailOtp, verifyPhoneOtp, navigate]);
+  }, [otp, mode, email, phone, name, authUser, verifyEmailOtp, verifyPhoneOtp, navigate]);
 
   const switchMode = (m: SignupMode) => {
     setMode(m);

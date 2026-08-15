@@ -92,7 +92,7 @@ export default function DeliveryDetailsPage() {
     const { data } = await supabase
       .from('addresses')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('user_id', user.uid)
       .order('created_at', { ascending: false });
     if (data && data.length > 0) {
       setAddresses(data as Address[]);
@@ -132,7 +132,7 @@ export default function DeliveryDetailsPage() {
     setSaving(true);
     try {
       const payload = {
-        user_id: user.id,
+        user_id: user.uid,
         label: form.label,
         name: form.name,
         phone: form.phone,
@@ -166,7 +166,7 @@ export default function DeliveryDetailsPage() {
           .from('addresses')
           .update({ is_default: false })
           .neq('id', editingId || '00000000-0000-0000-0000-000000000000')
-          .eq('user_id', user.id);
+          .eq('user_id', user.uid);
       }
 
       setShowForm(false);

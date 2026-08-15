@@ -60,7 +60,7 @@ export default function ProfilePage() {
           full_name: form.full_name,
           phone: form.phone,
         })
-        .eq('id', user.id);
+        .eq('id', user.uid);
       if (error) throw error;
       await refreshProfile();
       toast.success('Profile updated successfully!');
