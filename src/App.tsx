@@ -14,6 +14,7 @@ const LoginPage = lazy(() => import('@/pages/login'));
 const SignupPage = lazy(() => import('@/pages/signup'));
 const DashboardPage = lazy(() => import('@/pages/dashboard'));
 const AdminPage = lazy(() => import('@/pages/admin'));
+const AdminLoginPage = lazy(() => import('@/pages/admin-login'));
 const ProfilePage = lazy(() => import('@/pages/profile'));
 const DeliveryDetailsPage = lazy(() => import('@/pages/delivery-details'));
 const OrderSuccessPage = lazy(() => import('@/pages/order-success'));
@@ -60,6 +61,8 @@ export default function App() {
               <Route path="/forgot-password" element={<ForgotPasswordPage />} />
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/admin" element={<AdminPage />} />
+              <Route path="/admin-login" element={<AdminLoginPage />} />
+              <Route path="/admin-panel" element={<AdminPage />} />
               <Route path="/profile" element={<ProfilePage />} />
               <Route path="/delivery-details" element={<DeliveryDetailsPage />} />
               <Route path="/order/success" element={<OrderSuccessPage />} />

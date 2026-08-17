@@ -80,7 +80,7 @@ export default function AdminPage() {
   useEffect(() => {
     if (authLoading) return;
     if (!user) {
-      navigate('/login?redirect=/admin');
+      navigate('/admin-login');
       return;
     }
     if (profile?.role === 'admin') {

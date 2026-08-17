@@ -7,6 +7,8 @@ import {
   type ConfirmationResult,
   onAuthStateChanged,
   signOut as firebaseSignOut,
+  signInWithEmailAndPassword,
+  sendPasswordResetEmail,
 } from 'firebase/auth';
 import { firebaseAuth, isFirebaseConfigured } from './firebase';
 
@@ -28,6 +30,8 @@ type AuthContextType = {
   verifyPhoneOtp: (otp: string) => Promise<{ error: string | null }>;
   sendEmailOtp: (email: string) => Promise<{ error: string | null }>;
   verifyEmailOtp: (email: string, token: string) => Promise<{ error: string | null }>;
+  adminLogin: (email: string, password: string) => Promise<{ error: string | null }>;
+  adminResetPassword: (email: string) => Promise<{ error: string | null }>;
 };
 
 const AuthContext = createContext<AuthContextType>({
@@ -41,6 +45,8 @@ const AuthContext = createContext<AuthContextType>({
   verifyPhoneOtp: async () => ({ error: 'Not initialized' }),
   sendEmailOtp: async () => ({ error: 'Not initialized' }),
   verifyEmailOtp: async () => ({ error: 'Not initialized' }),
+  adminLogin: async () => ({ error: 'Not initialized' }),
+  adminResetPassword: async () => ({ error: 'Not initialized' }),
 });
 
 function toAuthUser(fbUser: FirebaseUser): AuthUser {
@@ -201,6 +207,50 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
+  const adminLogin = useCallback(
+    async (email: string, password: string): Promise<{ error: string | null }> => {
+      if (!isFirebaseConfigured || !firebaseAuth) {
+        return { error: 'Admin login is not configured. Please contact support.' };
+      }
+      try {
+        const cred = await signInWithEmailAndPassword(firebaseAuth, email.trim(), password);
+        const authUser = toAuthUser(cred.user);
+        setUser(authUser);
+        await fetchProfile(authUser.uid);
+        return { error: null };
+      } catch (err) {
+        const error = err as { code?: string; message?: string };
+        if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found') {
+          return { error: 'Invalid email or password.' };
+        }
+        if (error.code === 'auth/too-many-requests') {
+          return { error: 'Too many attempts. Please try again later.' };
+        }
+        return { error: error.message || 'Login failed. Please try again.' };
+      }
+    },
+    [fetchProfile]
+  );
+
+  const adminResetPassword = useCallback(
+    async (email: string): Promise<{ error: string | null }> => {
+      if (!isFirebaseConfigured || !firebaseAuth) {
+        return { error: 'Password reset is not configured. Please contact support.' };
+      }
+      try {
+        await sendPasswordResetEmail(firebaseAuth, email.trim());
+        return { error: null };
+      } catch (err) {
+        const error = err as { code?: string; message?: string };
+        if (error.code === 'auth/user-not-found') {
+          return { error: 'No account found with this email address.' };
+        }
+        return { error: error.message || 'Failed to send reset email. Please try again.' };
+      }
+    },
+    []
+  );
+
   const signOut = useCallback(async () => {
     if (isFirebaseConfigured && firebaseAuth) {
       try {
@@ -235,6 +285,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         verifyPhoneOtp,
         sendEmailOtp,
         verifyEmailOtp,
+        adminLogin,
+        adminResetPassword,
       }}
     >
       {children}
