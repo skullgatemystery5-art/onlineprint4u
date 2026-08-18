@@ -89,7 +89,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (fbUser) {
         const authUser = toAuthUser(fbUser);
         setUser(authUser);
-        await fetchProfile(authUser.uid);
+        await fetchProfile(authUser.email);
         setLoading(false);
       } else {
         setUser(null);
