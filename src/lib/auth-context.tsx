@@ -65,15 +65,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
   const [recaptchaVerifier, setRecaptchaVerifier] = useState<RecaptchaVerifier | null>(null);
 
-  const fetchProfile = useCallback(async (uid: string) => {
-    const { data } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('email', user.email)
-      .maybeSingle();
-    setProfile(data as Profile | null);
-  }, []);
-
+  const fetchProfile = useCallback(async (email: string) => {
+    if (!email) return;
+  const { data } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('email', email)
+    .maybeSingle();
+  setProfile(data as Profile | null);
+}, []);
+  
   const refreshProfile = useCallback(async () => {
     if (user) await fetchProfile(user.uid);
   }, [user, fetchProfile]);
