@@ -279,7 +279,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user,
         profile,
         loading,
-        isAdmin: true, // या जो भी वैल्यू हो
+    isAdmin: true, // या जो भी वैल्यू हो
         signOut,
         refreshProfile,
         sendPhoneOtp,
