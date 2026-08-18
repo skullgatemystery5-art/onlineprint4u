@@ -31,7 +31,6 @@ import { useAuth } from '@/lib/auth-context';
 import { supabase, type Address, type Order } from '@/lib/supabase';
 import { formatINR } from '@/lib/pricing';
 import { siteConfig, advancePercentage } from '@/lib/site-config';
-import { sendOwnerNotifications } from '@/lib/notify';
 import { cn } from '@/lib/utils';
 import { formatWeight, type CourierType } from '@/lib/shipping';
 import { ShippingPolicyModal } from '@/components/shipping-policy-modal';
@@ -358,9 +357,39 @@ export default function CheckoutPage() {
         // Non-blocking
       }
 
-      // Send notifications (best-effort)
+      // Send notifications (best-effort) via edge function
       try {
-        sendOwnerNotifications(order);
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+        const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+        await fetch(`${supabaseUrl}/functions/v1/notify-order`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabaseAnonKey}`,
+          },
+          body: JSON.stringify({
+            order: {
+              order_number: order.order_number,
+              created_at: order.created_at,
+              shipping_name: order.shipping_name,
+              shipping_phone: order.shipping_phone,
+              shipping_address: order.shipping_address,
+              shipping_pincode: order.shipping_pincode,
+              customer_email: order.customer_email,
+              items: order.items,
+              subtotal: order.subtotal,
+              discount: order.discount,
+              coupon_code: order.coupon_code,
+              shipping_cost: order.shipping_cost,
+              total: order.total,
+              payment_method: order.payment_method,
+              payment_status: order.payment_status,
+              notes: order.notes,
+            },
+            ownerEmail: 'contact@onlineprint4u.in',
+            ownerWhatsApp: '917858093865',
+          }),
+        });
       } catch {
         // Non-blocking
       }

@@ -23,6 +23,13 @@ import {
   Settings,
   Save,
   Loader2,
+  Download,
+  ChevronDown,
+  ChevronRight,
+  MapPin,
+  Phone,
+  Mail,
+  CreditCard,
 } from 'lucide-react';
 import { Header } from '@/components/header';
 import { Footer } from '@/components/footer';
@@ -80,7 +87,7 @@ export default function AdminPage() {
   useEffect(() => {
     if (authLoading) return;
     if (!user) {
-      navigate('/login?redirect=/admin');
+      navigate('/admin-login');
       return;
     }
     if (profile?.role === 'admin') {
@@ -117,6 +124,9 @@ export default function AdminPage() {
     setLoading(false);
   };
 
+  const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
+  const [trackingInputs, setTrackingInputs] = useState<Record<string, string>>({});
+
   const updateOrderStatus = async (orderId: string, status: string) => {
     try {
       const { error } = await supabase
@@ -135,6 +145,23 @@ export default function AdminPage() {
       toast.success(`Order status updated to ${status}`);
     } catch {
       toast.error('Failed to update order status.');
+    }
+  };
+
+  const updateTrackingId = async (orderId: string) => {
+    const trackingId = trackingInputs[orderId] ?? '';
+    try {
+      const { error } = await supabase
+        .from('orders')
+        .update({ tracking_id: trackingId })
+        .eq('id', orderId);
+      if (error) throw error;
+      setOrders((prev) =>
+        prev.map((o) => (o.id === orderId ? { ...o, tracking_id: trackingId } : o))
+      );
+      toast.success('Tracking ID updated.');
+    } catch {
+      toast.error('Failed to update tracking ID.');
     }
   };
 
@@ -350,57 +377,234 @@ export default function AdminPage() {
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="border-b border-border text-left">
+                            <th className="pb-3 pr-4 font-semibold"></th>
                             <th className="pb-3 pr-4 font-semibold">Order #</th>
+                            <th className="pb-3 pr-4 font-semibold">Date &amp; Time</th>
                             <th className="pb-3 pr-4 font-semibold">Customer</th>
-                            <th className="pb-3 pr-4 font-semibold">Items</th>
+                            <th className="pb-3 pr-4 font-semibold">Delivery Address</th>
+                            <th className="pb-3 pr-4 font-semibold">Printing Requirements</th>
                             <th className="pb-3 pr-4 font-semibold">Total</th>
                             <th className="pb-3 pr-4 font-semibold">Payment</th>
                             <th className="pb-3 pr-4 font-semibold">Status</th>
-                            <th className="pb-3 font-semibold">Update</th>
+                            <th className="pb-3 pr-4 font-semibold">Tracking ID</th>
+                            <th className="pb-3 font-semibold">File Link</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {orders.map((order) => (
-                            <tr key={order.id} className="border-b border-border/50">
-                              <td className="py-3 pr-4">
-                                <p className="font-mono text-xs font-semibold">{order.order_number}</p>
-                                <p className="text-xs text-muted-foreground">
-                                  {new Date(order.created_at).toLocaleDateString('en-IN')}
-                                </p>
-                              </td>
-                              <td className="py-3 pr-4">
-                                <p className="text-xs font-medium">{order.shipping_name}</p>
-                                <p className="text-xs text-muted-foreground">{order.shipping_phone}</p>
-                              </td>
-                              <td className="py-3 pr-4 text-xs">{order.items.length} items</td>
-                              <td className="py-3 pr-4 font-semibold">{formatINR(order.total)}</td>
-                              <td className="py-3 pr-4">
-                                <Badge variant={order.payment_status === 'paid' ? 'default' : 'secondary'}>
-                                  {order.payment_status}
-                                </Badge>
-                              </td>
-                              <td className="py-3 pr-4">
-                                <Badge variant="outline">{order.order_status}</Badge>
-                              </td>
-                              <td className="py-3">
-                                <Select
-                                  value={order.order_status}
-                                  onValueChange={(v) => updateOrderStatus(order.id, v)}
-                                >
-                                  <SelectTrigger className="h-8 w-36 text-xs">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {statusOptions.map((s) => (
-                                      <SelectItem key={s} value={s} className="capitalize text-xs">
-                                        {s}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </td>
-                            </tr>
-                          ))}
+                          {orders.map((order) => {
+                            const isExpanded = expandedOrder === order.id;
+                            const orderItems = order.items as Array<{
+                              fileName: string;
+                              fileType: string;
+                              pages: number;
+                              copies: number;
+                              printType: string;
+                              side: string;
+                              paperGsm: string;
+                              binding: string;
+                              lamination: string;
+                              premiumPhoto: boolean;
+                              notes: string;
+                              price: number;
+                              fileUrl?: string;
+                            }>;
+                            return (
+                              <>
+                                <tr key={order.id} className="border-b border-border/50 hover:bg-muted/20">
+                                  <td className="py-3 pr-2">
+                                    <button
+                                      onClick={() => setExpandedOrder(isExpanded ? null : order.id)}
+                                      className="rounded p-1 hover:bg-muted"
+                                    >
+                                      {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                                    </button>
+                                  </td>
+                                  <td className="py-3 pr-4">
+                                    <p className="font-mono text-xs font-semibold">{order.order_number}</p>
+                                  </td>
+                                  <td className="py-3 pr-4">
+                                    <p className="text-xs font-medium">
+                                      {new Date(order.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                    </p>
+                                    <p className="text-xs text-muted-foreground">
+                                      {new Date(order.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                                    </p>
+                                  </td>
+                                  <td className="py-3 pr-4">
+                                    <p className="text-xs font-medium">{order.shipping_name}</p>
+                                    <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                                      <Phone className="h-3 w-3" /> {order.shipping_phone}
+                                    </p>
+                                    {order.customer_email && (
+                                      <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                                        <Mail className="h-3 w-3" /> {order.customer_email}
+                                      </p>
+                                    )}
+                                  </td>
+                                  <td className="py-3 pr-4 max-w-[200px]">
+                                    <p className="flex items-start gap-1 text-xs text-muted-foreground">
+                                      <MapPin className="mt-0.5 h-3 w-3 shrink-0" />
+                                      <span>{order.shipping_address} — {order.shipping_pincode}</span>
+                                    </p>
+                                  </td>
+                                  <td className="py-3 pr-4 max-w-[220px]">
+                                    <p className="text-xs text-muted-foreground">{orderItems.length} item(s)</p>
+                                    <div className="mt-1 flex flex-wrap gap-1">
+                                      {orderItems.slice(0, 2).map((item, i) => (
+                                        <span key={i} className="rounded-md bg-muted px-2 py-0.5 text-xs">
+                                          {item.fileName} ({item.pages}p × {item.copies})
+                                        </span>
+                                      ))}
+                                      {orderItems.length > 2 && (
+                                        <span className="text-xs text-primary">+{orderItems.length - 2} more</span>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="py-3 pr-4 font-semibold">{formatINR(order.total)}</td>
+                                  <td className="py-3 pr-4">
+                                    <div className="flex flex-col gap-1">
+                                      <Badge variant={order.payment_status === 'paid' ? 'default' : 'secondary'}>
+                                        {order.payment_status}
+                                      </Badge>
+                                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                                        <CreditCard className="h-3 w-3" /> {order.payment_method}
+                                      </span>
+                                    </div>
+                                  </td>
+                                  <td className="py-3 pr-4">
+                                    <Badge variant="outline">{order.order_status}</Badge>
+                                    <Select
+                                      value={order.order_status}
+                                      onValueChange={(v) => updateOrderStatus(order.id, v)}
+                                    >
+                                      <SelectTrigger className="mt-1 h-8 w-36 text-xs">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {statusOptions.map((s) => (
+                                          <SelectItem key={s} value={s} className="capitalize text-xs">
+                                            {s}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </td>
+                                  <td className="py-3 pr-4">
+                                    {order.tracking_id && !isExpanded && (
+                                      <p className="text-xs font-mono">{order.tracking_id}</p>
+                                    )}
+                                    <Input
+                                      type="text"
+                                      value={trackingInputs[order.id] ?? order.tracking_id ?? ''}
+                                      onChange={(e) => setTrackingInputs({ ...trackingInputs, [order.id]: e.target.value })}
+                                      placeholder="Enter tracking ID"
+                                      className="h-8 w-32 text-xs"
+                                    />
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="mt-1 h-7 text-xs"
+                                      onClick={() => updateTrackingId(order.id)}
+                                    >
+                                      <Save className="h-3 w-3" /> Save
+                                    </Button>
+                                  </td>
+                                  <td className="py-3 pr-4">
+                                    {orderItems.some((item) => item.fileUrl) ? (
+                                      <div className="flex flex-col gap-1">
+                                        {orderItems.filter((item) => item.fileUrl).slice(0, 1).map((item, i) => (
+                                          <a
+                                            key={i}
+                                            href={item.fileUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="flex items-center gap-1 text-xs text-primary hover:underline"
+                                          >
+                                            <Download className="h-3 w-3" /> Download
+                                          </a>
+                                        ))}
+                                        {orderItems.filter((item) => item.fileUrl).length > 1 && (
+                                          <span className="text-xs text-muted-foreground">
+                                            +{orderItems.filter((item) => item.fileUrl).length - 1} more files
+                                          </span>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <span className="text-xs text-muted-foreground">No file</span>
+                                    )}
+                                  </td>
+                                </tr>
+                                {isExpanded && (
+                                  <tr className="bg-muted/10">
+                                    <td colSpan={11} className="px-8 py-4">
+                                      <div className="space-y-4">
+                                        <div>
+                                          <h4 className="mb-2 font-display text-sm font-semibold">Full Printing Requirements</h4>
+                                          <div className="space-y-2">
+                                            {orderItems.map((item, i) => {
+                                              const typeLabel = item.printType === 'bw' ? 'B&W' : 'Color';
+                                              const sideLabel = item.side === 'double' ? 'Double' : 'Single';
+                                              const bindingLabel = item.binding !== 'none' ? ` | ${item.binding}` : '';
+                                              const laminationLabel = item.lamination !== 'none' ? ` | ${item.lamination}` : '';
+                                              return (
+                                                <div key={i} className="rounded-lg border border-border p-3">
+                                                  <div className="flex items-start justify-between gap-2">
+                                                    <div className="flex-1">
+                                                      <p className="text-sm font-medium">{item.fileName}</p>
+                                                      <p className="text-xs text-muted-foreground">
+                                                        {item.pages} pages × {item.copies} copies | {typeLabel} {sideLabel} | {item.paperGsm}GSM{bindingLabel}{laminationLabel}
+                                                        {item.premiumPhoto ? ' | Premium Photo' : ''}
+                                                      </p>
+                                                      {item.notes && <p className="mt-1 text-xs text-amber-600">Note: {item.notes}</p>}
+                                                    </div>
+                                                    <div className="text-right">
+                                                      <p className="text-sm font-semibold">{formatINR(item.price)}</p>
+                                                      {item.fileUrl && (
+                                                        <a
+                                                          href={item.fileUrl}
+                                                          target="_blank"
+                                                          rel="noopener noreferrer"
+                                                          className="mt-1 flex items-center gap-1 text-xs text-primary hover:underline"
+                                                        >
+                                                          <Download className="h-3 w-3" /> Download File
+                                                        </a>
+                                                      )}
+                                                    </div>
+                                                  </div>
+                                                </div>
+                                              );
+                                            })}
+                                          </div>
+                                        </div>
+                                        <div className="grid gap-4 sm:grid-cols-2">
+                                          <div className="rounded-lg border border-border p-3">
+                                            <h4 className="mb-2 text-xs font-semibold text-muted-foreground">Order Details</h4>
+                                            <div className="space-y-1 text-xs">
+                                              <div className="flex justify-between"><span className="text-muted-foreground">Subtotal:</span> <span>{formatINR(order.subtotal)}</span></div>
+                                              {order.discount > 0 && <div className="flex justify-between text-emerald-600"><span>Discount{order.coupon_code ? ` (${order.coupon_code})` : ''}:</span> <span>-{formatINR(order.discount)}</span></div>}
+                                              <div className="flex justify-between"><span className="text-muted-foreground">Shipping:</span> <span>{formatINR(order.shipping_cost)}</span></div>
+                                              <div className="flex justify-between font-bold"><span>Total:</span> <span>{formatINR(order.total)}</span></div>
+                                            </div>
+                                          </div>
+                                          <div className="rounded-lg border border-border p-3">
+                                            <h4 className="mb-2 text-xs font-semibold text-muted-foreground">Shipping & Payment</h4>
+                                            <div className="space-y-1 text-xs">
+                                              <p><span className="text-muted-foreground">Courier:</span> {order.courier_type}</p>
+                                              {order.delivery_type_label && <p><span className="text-muted-foreground">Delivery:</span> {order.delivery_type_label}</p>}
+                                              <p><span className="text-muted-foreground">Payment Method:</span> {order.payment_method}</p>
+                                              <p><span className="text-muted-foreground">Payment Status:</span> {order.payment_status}</p>
+                                              {order.tracking_id && <p><span className="text-muted-foreground">Tracking ID:</span> <span className="font-mono">{order.tracking_id}</span></p>}
+                                              {order.notes && <p><span className="text-muted-foreground">Notes:</span> {order.notes}</p>}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                )}
+                              </>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
