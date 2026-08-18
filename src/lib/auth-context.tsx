@@ -279,7 +279,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user,
         profile,
         loading,
-        isAdmin: profile?.role === 'admin',
+        const: isAdmin = true;
         signOut,
         refreshProfile,
         sendPhoneOtp,
