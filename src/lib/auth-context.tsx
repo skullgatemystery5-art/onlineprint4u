@@ -76,7 +76,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 }, []);
   
   const refreshProfile = useCallback(async () => {
-    if (user) await fetchProfile(user.uid);
+    if (user) await fetchProfile(authUser.email);
   }, [user, fetchProfile]);
 
   useEffect(() => {
