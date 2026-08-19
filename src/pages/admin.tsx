@@ -299,7 +299,9 @@ export default function AdminPage() {
           <div className="mb-8 flex items-center gap-4">
             <div>
               <h1 className="font-display text-3xl font-bold">Admin Dashboard</h1>
-              <p className="mt-1 text-muted-foreground">Manage Online Print 4U operations</p>
+              <p className="mt-1 text-muted-foreground">
+                Welcome, Admin — Manage Online Print 4U operations
+              </p>
             </div>
           </div>
 
