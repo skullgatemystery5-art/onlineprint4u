@@ -181,8 +181,7 @@ export default function DashboardPage() {
         <div className="container mx-auto max-w-6xl px-4 lg:px-8">
           <div className="mb-8">
             <h1 className="font-display text-3xl font-bold">
-              <h1 className="font-display text-3xl font-bold">
-  Welcome, Admin!              
+              Welcome, {profile?.full_name?.split(' ')[0] ?? 'User'}!
             </h1>
             <p className="mt-1 text-muted-foreground">Manage your orders, addresses, and invoices.</p>
           </div>

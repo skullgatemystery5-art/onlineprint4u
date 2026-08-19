@@ -63,11 +63,7 @@ export default function App() {
               <Route path="/admin" element={<AdminPage />} />
               <Route path="/adminpanel" element={<AdminPage />} />
               <Route path="/admin-panel" element={<AdminPage />} />
-<<<<<<< HEAD
               <Route path="/admin-login" element={<AdminLoginPage />} />
-=======
-              <Route path="/adminpanel" element={<AdminPage />} />
->>>>>>> 1606be6f569d56425fcb4390aec5a6b2e8b2c2a5
               <Route path="/profile" element={<ProfilePage />} />
               <Route path="/delivery-details" element={<DeliveryDetailsPage />} />
               <Route path="/order/success" element={<OrderSuccessPage />} />

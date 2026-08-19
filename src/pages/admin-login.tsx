@@ -36,7 +36,7 @@ export default function AdminLoginPage() {
       return;
     }
     toast.success('Welcome back, Admin!');
-    navigate('/adminpanel');
+    navigate('/admin-panel');
   };
 
   const handleReset = async (e: React.FormEvent) => {

@@ -65,40 +65,69 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
   const [recaptchaVerifier, setRecaptchaVerifier] = useState<RecaptchaVerifier | null>(null);
 
-  const fetchProfile = useCallback(async (email: string) => {
-    if (!email) return;
-  const { data } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('email', email)
-    .maybeSingle();
-  setProfile(data as Profile | null);
-}, []);
-  
+  const fetchProfile = useCallback(async (uid: string) => {
+    const { data } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', uid)
+      .maybeSingle();
+    setProfile(data as Profile | null);
+  }, []);
+
   const refreshProfile = useCallback(async () => {
-    if (user) await fetchProfile(authUser.email);
+    if (user) await fetchProfile(user.uid);
   }, [user, fetchProfile]);
 
   useEffect(() => {
-    if (!isFirebaseConfigured || !firebaseAuth) {
-      setLoading(false);
-      return;
-    }
+    let unsubFb: (() => void) | undefined;
 
-    const unsub = onAuthStateChanged(firebaseAuth, async (fbUser) => {
-      if (fbUser) {
-        const authUser = toAuthUser(fbUser);
+    // Listen to Supabase auth state (admin login)
+    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user) {
+        const authUser: AuthUser = {
+          uid: session.user.id,
+          phoneNumber: session.user.phone ?? null,
+          email: session.user.email ?? null,
+          displayName: session.user.user_metadata?.full_name ?? 'Admin',
+        };
         setUser(authUser);
-        await fetchProfile(authUser.email);
-        setLoading(false);
-      } else {
-        setUser(null);
-        setProfile(null);
+        await fetchProfile(authUser.uid);
         setLoading(false);
       }
     });
 
-    return () => unsub();
+    // Check existing Supabase session on mount
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        const authUser: AuthUser = {
+          uid: session.user.id,
+          phoneNumber: session.user.phone ?? null,
+          email: session.user.email ?? null,
+          displayName: session.user.user_metadata?.full_name ?? 'Admin',
+        };
+        setUser(authUser);
+        await fetchProfile(authUser.uid);
+      }
+      setLoading(false);
+    })();
+
+    // Also listen to Firebase auth if configured (phone OTP users)
+    if (isFirebaseConfigured && firebaseAuth) {
+      unsubFb = onAuthStateChanged(firebaseAuth, async (fbUser) => {
+        if (fbUser) {
+          const authUser = toAuthUser(fbUser);
+          setUser(authUser);
+          await fetchProfile(authUser.uid);
+          setLoading(false);
+        }
+      });
+    }
+
+    return () => {
+      sub.subscription.unsubscribe();
+      if (unsubFb) unsubFb();
+    };
   }, [fetchProfile]);
 
   const sendPhoneOtp = useCallback(
@@ -210,24 +239,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const adminLogin = useCallback(
     async (email: string, password: string): Promise<{ error: string | null }> => {
-      if (!isFirebaseConfigured || !firebaseAuth) {
-        return { error: 'Admin login is not configured. Please contact support.' };
-      }
       try {
-        const cred = await signInWithEmailAndPassword(firebaseAuth, email.trim(), password);
-        const authUser = toAuthUser(cred.user);
+        const { data, error: signInError } = await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        });
+        if (signInError || !data.user) {
+          const msg = signInError?.message ?? 'Login failed.';
+          if (msg.toLowerCase().includes('invalid login') || msg.toLowerCase().includes('invalid credentials')) {
+            return { error: 'Invalid email or password.' };
+          }
+          return { error: msg };
+        }
+
+        const authUser: AuthUser = {
+          uid: data.user.id,
+          phoneNumber: data.user.phone ?? null,
+          email: data.user.email ?? null,
+          displayName: data.user.user_metadata?.full_name ?? 'Admin',
+        };
         setUser(authUser);
         await fetchProfile(authUser.uid);
         return { error: null };
       } catch (err) {
-        const error = err as { code?: string; message?: string };
-        if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found') {
-          return { error: 'Invalid email or password.' };
-        }
-        if (error.code === 'auth/too-many-requests') {
-          return { error: 'Too many attempts. Please try again later.' };
-        }
-        return { error: error.message || 'Login failed. Please try again.' };
+        const msg = err instanceof Error ? err.message : 'Login failed. Please try again.';
+        return { error: msg };
       }
     },
     [fetchProfile]
@@ -235,24 +271,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const adminResetPassword = useCallback(
     async (email: string): Promise<{ error: string | null }> => {
-      if (!isFirebaseConfigured || !firebaseAuth) {
-        return { error: 'Password reset is not configured. Please contact support.' };
-      }
       try {
-        await sendPasswordResetEmail(firebaseAuth, email.trim());
+        const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim());
+        if (resetError) {
+          if (resetError.message.toLowerCase().includes('user not found')) {
+            return { error: 'No account found with this email address.' };
+          }
+          return { error: resetError.message };
+        }
         return { error: null };
       } catch (err) {
-        const error = err as { code?: string; message?: string };
-        if (error.code === 'auth/user-not-found') {
-          return { error: 'No account found with this email address.' };
-        }
-        return { error: error.message || 'Failed to send reset email. Please try again.' };
+        const msg = err instanceof Error ? err.message : 'Failed to send reset email. Please try again.';
+        return { error: msg };
       }
     },
     []
   );
 
   const signOut = useCallback(async () => {
+    await supabase.auth.signOut();
     if (isFirebaseConfigured && firebaseAuth) {
       try {
         await firebaseSignOut(firebaseAuth);
@@ -279,7 +316,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user,
         profile,
         loading,
-    isAdmin: true, // या जो भी वैल्यू हो
+        isAdmin: profile?.role === 'admin',
         signOut,
         refreshProfile,
         sendPhoneOtp,
