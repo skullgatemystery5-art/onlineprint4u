@@ -1127,7 +1127,6 @@ export default function AdminPage() {
               </Card>
             </TabsContent>
           </Tabs>
-          )}
         </div>
       </main>
       <Footer />
