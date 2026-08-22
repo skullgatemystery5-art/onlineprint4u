@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { supabase, type Profile } from './supabase';
+import { supabase, isSupabaseConfigured, type Profile } from './supabase';
 import type { User as FirebaseUser } from 'firebase/auth';
 import {
   signInWithPhoneNumber,
@@ -66,12 +66,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [recaptchaVerifier, setRecaptchaVerifier] = useState<RecaptchaVerifier | null>(null);
 
   const fetchProfile = useCallback(async (uid: string) => {
-    const { data } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', uid)
-      .maybeSingle();
-    setProfile(data as Profile | null);
+    if (!isSupabaseConfigured) {
+      setProfile(null);
+      return;
+    }
+    try {
+      const { data } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', uid)
+        .maybeSingle();
+      setProfile(data as Profile | null);
+    } catch {
+      setProfile(null);
+    }
   }, []);
 
   const refreshProfile = useCallback(async () => {
@@ -81,33 +89,49 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let unsubFb: (() => void) | undefined;
 
-    // Listen to Supabase auth state (admin login)
-    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (session?.user) {
-        const authUser: AuthUser = {
-          uid: session.user.id,
-          phoneNumber: session.user.phone ?? null,
-          email: session.user.email ?? null,
-          displayName: session.user.user_metadata?.full_name ?? 'Admin',
-        };
-        setUser(authUser);
-        await fetchProfile(authUser.uid);
-        setLoading(false);
+    // Listen to Supabase auth state (admin login) — only if configured
+    let sub: { subscription: { unsubscribe: () => void } } | undefined;
+    if (isSupabaseConfigured) {
+      try {
+        const { data: subData } = supabase.auth.onAuthStateChange(async (_event, session) => {
+          if (session?.user) {
+            const authUser: AuthUser = {
+              uid: session.user.id,
+              phoneNumber: session.user.phone ?? null,
+              email: session.user.email ?? null,
+              displayName: session.user.user_metadata?.full_name ?? 'Admin',
+            };
+            setUser(authUser);
+            await fetchProfile(authUser.uid);
+            setLoading(false);
+          }
+        });
+        sub = subData;
+      } catch {
+        // Supabase auth listener failed — non-blocking
       }
-    });
+    }
 
     // Check existing Supabase session on mount
     (async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        const authUser: AuthUser = {
-          uid: session.user.id,
-          phoneNumber: session.user.phone ?? null,
-          email: session.user.email ?? null,
-          displayName: session.user.user_metadata?.full_name ?? 'Admin',
-        };
-        setUser(authUser);
-        await fetchProfile(authUser.uid);
+      if (!isSupabaseConfigured) {
+        setLoading(false);
+        return;
+      }
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          const authUser: AuthUser = {
+            uid: session.user.id,
+            phoneNumber: session.user.phone ?? null,
+            email: session.user.email ?? null,
+            displayName: session.user.user_metadata?.full_name ?? 'Admin',
+          };
+          setUser(authUser);
+          await fetchProfile(authUser.uid);
+        }
+      } catch {
+        // Session check failed — non-blocking
       }
       setLoading(false);
     })();
@@ -125,7 +149,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     return () => {
-      sub.subscription.unsubscribe();
+      if (sub) sub.subscription.unsubscribe();
       if (unsubFb) unsubFb();
     };
   }, [fetchProfile]);
@@ -239,6 +263,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const adminLogin = useCallback(
     async (email: string, password: string): Promise<{ error: string | null }> => {
+      if (!isSupabaseConfigured) {
+        return { error: 'Database is not configured. Please set up valid credentials to enable login.' };
+      }
       try {
         const { data, error: signInError } = await supabase.auth.signInWithPassword({
           email: email.trim(),
@@ -271,6 +298,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const adminResetPassword = useCallback(
     async (email: string): Promise<{ error: string | null }> => {
+      if (!isSupabaseConfigured) {
+        return { error: 'Database is not configured. Please contact support.' };
+      }
       try {
         const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim());
         if (resetError) {
@@ -289,7 +319,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const signOut = useCallback(async () => {
-    await supabase.auth.signOut();
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.auth.signOut();
+      } catch {
+        // ignore
+      }
+    }
     if (isFirebaseConfigured && firebaseAuth) {
       try {
         await firebaseSignOut(firebaseAuth);

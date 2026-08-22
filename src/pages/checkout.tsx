@@ -28,7 +28,7 @@ import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { useCart } from '@/lib/cart-context';
 import { useAuth } from '@/lib/auth-context';
-import { supabase, type Address, type Order } from '@/lib/supabase';
+import { supabase, isSupabaseConfigured, type Address, type Order } from '@/lib/supabase';
 import { formatINR } from '@/lib/pricing';
 import { siteConfig, advancePercentage } from '@/lib/site-config';
 import { cn } from '@/lib/utils';
@@ -129,14 +129,22 @@ export default function CheckoutPage() {
   // --- Load addresses when user is available ---
   useEffect(() => {
     if (!user) return;
+    if (!isSupabaseConfigured) {
+      setUseNewAddress(true);
+      return;
+    }
     // Fetch saved addresses from Supabase (RLS allows user to see own)
     supabase
       .from('addresses')
       .select('*')
       .eq('user_id', user.uid)
       .order('is_default', { ascending: false })
-      .then(({ data }) => {
-        if (data && data.length > 0) {
+      .then(({ data, error }) => {
+        if (error || !data) {
+          setUseNewAddress(true);
+          return;
+        }
+        if (data.length > 0) {
           setAddresses(data as Address[]);
           const def = data.find((a) => a.is_default) ?? data[0];
           if (def) setSelectedAddress(def.id);
@@ -144,7 +152,8 @@ export default function CheckoutPage() {
         } else {
           setUseNewAddress(true);
         }
-      });
+      })
+      .catch(() => setUseNewAddress(true));
     // Pre-fill name/phone/email from profile
     if (profile) {
       setNewAddr((prev) => ({

@@ -27,7 +27,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { supabase, type Order, type Address } from '@/lib/supabase';
+import { supabase, isSupabaseConfigured, type Order, type Address } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { formatINR } from '@/lib/pricing';
 import { cn } from '@/lib/utils';
@@ -68,24 +68,30 @@ export default function DashboardPage() {
       navigate('/login?redirect=/dashboard');
       return;
     }
+    if (!isSupabaseConfigured) {
+      setLoading(false);
+      return;
+    }
     Promise.all([
       supabase
         .from('orders')
         .select('*')
         .eq('user_id', user.uid)
         .order('created_at', { ascending: false })
-        .then(({ data }) => data as Order[] | null),
+        .then(({ data }) => data as Order[] | null)
+        .catch(() => null),
       supabase
         .from('addresses')
         .select('*')
         .eq('user_id', user.uid)
         .order('created_at', { ascending: false })
-        .then(({ data }) => data as Address[] | null),
+        .then(({ data }) => data as Address[] | null)
+        .catch(() => null),
     ]).then(([o, a]) => {
       if (o) setOrders(o);
       if (a) setAddresses(a);
       setLoading(false);
-    });
+    }).catch(() => setLoading(false));
   }, [user, authLoading, navigate]);
 
   const handleSaveAddress = async () => {

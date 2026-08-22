@@ -47,7 +47,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { supabase, type Order, type Profile, type Coupon, type PricingRate, type ShippingRate } from '@/lib/supabase';
+import { supabase, isSupabaseConfigured, type Order, type Profile, type Coupon, type PricingRate, type ShippingRate } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { formatINR } from '@/lib/pricing';
 import { cn } from '@/lib/utils';
@@ -65,6 +65,7 @@ export default function AdminPage() {
   const [rates, setRates] = useState<PricingRate[]>([]);
   const [shippingRates, setShippingRates] = useState<ShippingRate[]>([]);
   const [loading, setLoading] = useState(true);
+  const [dbError, setDbError] = useState<string | null>(null);
 
   // Edit states
   const [editingRate, setEditingRate] = useState<PricingRate | null>(null);
@@ -101,25 +102,35 @@ export default function AdminPage() {
   }, [user, profile, authLoading, navigate]);
 
   const loadAll = async () => {
+    if (!isSupabaseConfigured) {
+      setDbError('Please configure valid database credentials to view data.');
+      setLoading(false);
+      return;
+    }
     setLoading(true);
-    const [ordersRes, usersRes, couponsRes, ratesRes, shippingRes, settingsRes] = await Promise.all([
-      supabase.from('orders').select('*').order('created_at', { ascending: false }),
-      supabase.from('profiles').select('*').order('created_at', { ascending: false }),
-      supabase.from('coupons').select('*').order('created_at', { ascending: false }),
-      supabase.from('pricing_rates').select('*').order('category', { ascending: true }),
-      supabase.from('shipping_rates').select('*').order('base_rate', { ascending: true }),
-      supabase.from('site_settings').select('*'),
-    ]);
-    if (ordersRes.data) setOrders(ordersRes.data as Order[]);
-    if (usersRes.data) setUsers(usersRes.data as Profile[]);
-    if (couponsRes.data) setCoupons(couponsRes.data as Coupon[]);
-    if (ratesRes.data) setRates(ratesRes.data as PricingRate[]);
-    if (shippingRes.data) setShippingRates(shippingRes.data as ShippingRate[]);
-    if (settingsRes.data) {
-      const map: Record<string, string> = {};
-      (settingsRes.data as Array<{ key: string; value: string }>).forEach((s) => { map[s.key] = s.value; });
-      setSiteSettings(map);
-      setSettingsForm(map);
+    setDbError(null);
+    try {
+      const [ordersRes, usersRes, couponsRes, ratesRes, shippingRes, settingsRes] = await Promise.all([
+        supabase.from('orders').select('*').order('created_at', { ascending: false }),
+        supabase.from('profiles').select('*').order('created_at', { ascending: false }),
+        supabase.from('coupons').select('*').order('created_at', { ascending: false }),
+        supabase.from('pricing_rates').select('*').order('category', { ascending: true }),
+        supabase.from('shipping_rates').select('*').order('base_rate', { ascending: true }),
+        supabase.from('site_settings').select('*'),
+      ]);
+      if (ordersRes.data) setOrders(ordersRes.data as Order[]);
+      if (usersRes.data) setUsers(usersRes.data as Profile[]);
+      if (couponsRes.data) setCoupons(couponsRes.data as Coupon[]);
+      if (ratesRes.data) setRates(ratesRes.data as PricingRate[]);
+      if (shippingRes.data) setShippingRates(shippingRes.data as ShippingRate[]);
+      if (settingsRes.data) {
+        const map: Record<string, string> = {};
+        (settingsRes.data as Array<{ key: string; value: string }>).forEach((s) => { map[s.key] = s.value; });
+        setSiteSettings(map);
+        setSettingsForm(map);
+      }
+    } catch {
+      setDbError('Failed to load data. Please check your database configuration and try again.');
     }
     setLoading(false);
   };
@@ -1116,6 +1127,7 @@ export default function AdminPage() {
               </Card>
             </TabsContent>
           </Tabs>
+          )}
         </div>
       </main>
       <Footer />
