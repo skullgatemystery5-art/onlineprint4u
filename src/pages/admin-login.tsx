@@ -20,25 +20,15 @@ export default function AdminLoginPage() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || !email.includes('@')) {
-      toast.error('Please enter a valid email address.');
-      return;
+    // सीधा यहाँ अपनी ईमेल और पासवर्ड चेक कर लें (बिना डेटाबेस के)
+    if (email === "skullgetmystery5@gmail.com" && password === "Admin@12345") {
+      toast.success("Login successful!");
+    navigate('/admin-panel'); // सीधा एडमिन पैनल पर भेज देगा
+    } else {  
+      toast.error("Invalid email or password.");
     }
-    if (!password || password.length < 6) {
-      toast.error('Password must be at least 6 characters.');
-      return;
-    }
-    setLoading(true);
-    const { error } = await adminLogin(email, password);
-    setLoading(false);
-    if (error) {
-      toast.error(error);
-      return;
-    }
-    toast.success('Welcome back, Admin!');
-    navigate('/admin-panel');
   };
-
+   
   const handleReset = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !email.includes('@')) {
