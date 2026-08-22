@@ -88,18 +88,28 @@ export default function DeliveryDetailsPage() {
 
   const loadAddresses = async () => {
     if (!user) return;
+    if (!isSupabaseConfigured) {
+      setShowForm(true);
+      setLoadingAddresses(false);
+      return;
+    }
     setLoadingAddresses(true);
-    const { data } = await supabase
-      .from('addresses')
-      .select('*')
-      .eq('user_id', user.uid)
-      .order('created_at', { ascending: false });
-    if (data && data.length > 0) {
-      setAddresses(data as Address[]);
-      const def = data.find((a) => a.is_default) ?? data[0];
-      setSelectedAddressId(def.id);
-      setPincode(def.pincode);
-    } else {
+    try {
+      const { data, error } = await supabase
+        .from('addresses')
+        .select('*')
+        .eq('user_id', user.uid)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      if (data && data.length > 0) {
+        setAddresses(data as Address[]);
+        const def = data.find((a) => a.is_default) ?? data[0];
+        setSelectedAddressId(def.id);
+        setPincode(def.pincode);
+      } else {
+        setShowForm(true);
+      }
+    } catch {
       setShowForm(true);
     }
     setLoadingAddresses(false);

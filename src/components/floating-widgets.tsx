@@ -51,20 +51,23 @@ export function FloatingWidgets() {
   const [shippingRates, setShippingRates] = useState<ShippingRate[]>([]);
 
   useEffect(() => {
+    if (!isSupabaseConfigured) return;
     supabase
       .from('pricing_rates')
       .select('*')
       .eq('active', true)
       .then(({ data }) => {
         if (data) setRates(data as PricingRate[]);
-      });
+      })
+      .catch(() => {});
     supabase
       .from('shipping_rates')
       .select('*')
       .eq('active', true)
       .then(({ data }) => {
         if (data) setShippingRates(data as ShippingRate[]);
-      });
+      })
+      .catch(() => {});
   }, []);
 
   const calculate = useCallback(() => {

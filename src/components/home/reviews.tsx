@@ -23,6 +23,7 @@ export function Reviews() {
   const [reviews, setReviews] = useState<Review[]>(fallbackReviews);
 
   useEffect(() => {
+    if (!isSupabaseConfigured) return;
     supabase
       .from('reviews')
       .select('*')
@@ -30,7 +31,8 @@ export function Reviews() {
       .order('created_at', { ascending: false })
       .then(({ data }) => {
         if (data && data.length > 0) setReviews(data as Review[]);
-      });
+      })
+      .catch(() => {});
   }, []);
 
   return (
