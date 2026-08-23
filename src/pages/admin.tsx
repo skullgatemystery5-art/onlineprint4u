@@ -91,7 +91,9 @@ export default function AdminPage() {
       navigate('/admin-login');
       return;
     }
-    if (profile?.role === 'admin') {
+    const ADMIN_EMAIL = 'skullgate.mystery5@gmail.com';
+    const isAdmin = profile?.role === 'admin' || user.email === ADMIN_EMAIL;
+    if (isAdmin) {
       setAuthorized(true);
       setChecking(false);
       loadAll();
