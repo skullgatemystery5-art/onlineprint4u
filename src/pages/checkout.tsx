@@ -134,26 +134,27 @@ export default function CheckoutPage() {
       return;
     }
     // Fetch saved addresses from Supabase (RLS allows user to see own)
-    supabase
-      .from('addresses')
-      .select('*')
-      .eq('user_id', user.uid)
-      .order('is_default', { ascending: false })
-      .then(({ data, error }) => {
-        if (error || !data) {
-          setUseNewAddress(true);
-          return;
-        }
-        if (data.length > 0) {
-          setAddresses(data as Address[]);
-          const def = data.find((a) => a.is_default) ?? data[0];
-          if (def) setSelectedAddress(def.id);
-          else setUseNewAddress(true);
-        } else {
-          setUseNewAddress(true);
-        }
-      })
-      .catch(() => setUseNewAddress(true));
+    Promise.resolve(
+      supabase
+        .from('addresses')
+        .select('*')
+        .eq('user_id', user.uid)
+        .order('is_default', { ascending: false })
+        .then(({ data, error }) => {
+          if (error || !data) {
+            setUseNewAddress(true);
+            return;
+          }
+          if (data.length > 0) {
+            setAddresses(data as Address[]);
+            const def = data.find((a) => a.is_default) ?? data[0];
+            if (def) setSelectedAddress(def.id);
+            else setUseNewAddress(true);
+          } else {
+            setUseNewAddress(true);
+          }
+        })
+    ).catch(() => setUseNewAddress(true));
     // Pre-fill name/phone/email from profile
     if (profile) {
       setNewAddr((prev) => ({

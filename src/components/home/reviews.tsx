@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Star, Quote } from 'lucide-react';
-import { supabase, type Review } from '@/lib/supabase';
+import { supabase, isSupabaseConfigured, type Review } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 
 const fallbackReviews: Review[] = [
@@ -24,15 +24,16 @@ export function Reviews() {
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
-    supabase
-      .from('reviews')
-      .select('*')
-      .eq('active', true)
-      .order('created_at', { ascending: false })
-      .then(({ data }) => {
-        if (data && data.length > 0) setReviews(data as Review[]);
-      })
-      .catch(() => {});
+    Promise.resolve(
+      supabase
+        .from('reviews')
+        .select('*')
+        .eq('active', true)
+        .order('created_at', { ascending: false })
+        .then(({ data }) => {
+          if (data && data.length > 0) setReviews(data as Review[]);
+        })
+    ).catch(() => {});
   }, []);
 
   return (

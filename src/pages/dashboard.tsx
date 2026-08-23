@@ -73,20 +73,22 @@ export default function DashboardPage() {
       return;
     }
     Promise.all([
-      supabase
-        .from('orders')
-        .select('*')
-        .eq('user_id', user.uid)
-        .order('created_at', { ascending: false })
-        .then(({ data }) => data as Order[] | null)
-        .catch(() => null),
-      supabase
-        .from('addresses')
-        .select('*')
-        .eq('user_id', user.uid)
-        .order('created_at', { ascending: false })
-        .then(({ data }) => data as Address[] | null)
-        .catch(() => null),
+      Promise.resolve(
+        supabase
+          .from('orders')
+          .select('*')
+          .eq('user_id', user.uid)
+          .order('created_at', { ascending: false })
+          .then(({ data }) => data as Order[] | null)
+      ).catch(() => null),
+      Promise.resolve(
+        supabase
+          .from('addresses')
+          .select('*')
+          .eq('user_id', user.uid)
+          .order('created_at', { ascending: false })
+          .then(({ data }) => data as Address[] | null)
+      ).catch(() => null),
     ]).then(([o, a]) => {
       if (o) setOrders(o);
       if (a) setAddresses(a);

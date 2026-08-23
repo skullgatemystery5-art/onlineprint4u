@@ -3,7 +3,7 @@ import { Calculator, X, Minus, Plus, LogIn } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth-context';
 import { formatINR, PAPER_GSM_OPTIONS, BINDING_OPTIONS } from '@/lib/pricing';
-import { supabase, type PricingRate, type ShippingRate, type PaperGsm } from '@/lib/supabase';
+import { supabase, isSupabaseConfigured, type PricingRate, type ShippingRate, type PaperGsm } from '@/lib/supabase';
 
 function getRatePrice(rates: PricingRate[], category: string, key: string): number {
   return rates.find((r) => r.category === category && r.key === key)?.price ?? 0;
@@ -52,22 +52,24 @@ export function FloatingWidgets() {
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
-    supabase
-      .from('pricing_rates')
-      .select('*')
-      .eq('active', true)
-      .then(({ data }) => {
-        if (data) setRates(data as PricingRate[]);
-      })
-      .catch(() => {});
-    supabase
-      .from('shipping_rates')
-      .select('*')
-      .eq('active', true)
-      .then(({ data }) => {
-        if (data) setShippingRates(data as ShippingRate[]);
-      })
-      .catch(() => {});
+    Promise.resolve(
+      supabase
+        .from('pricing_rates')
+        .select('*')
+        .eq('active', true)
+        .then(({ data }) => {
+          if (data) setRates(data as PricingRate[]);
+        })
+    ).catch(() => {});
+    Promise.resolve(
+      supabase
+        .from('shipping_rates')
+        .select('*')
+        .eq('active', true)
+        .then(({ data }) => {
+          if (data) setShippingRates(data as ShippingRate[]);
+        })
+    ).catch(() => {});
   }, []);
 
   const calculate = useCallback(() => {

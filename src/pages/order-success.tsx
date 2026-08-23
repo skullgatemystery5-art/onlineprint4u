@@ -28,16 +28,17 @@ export default function OrderSuccessPage() {
       setLoading(false);
       return;
     }
-    supabase
-      .from('orders')
-      .select('*')
-      .eq('id', orderId)
-      .maybeSingle()
-      .then(({ data, error }) => {
-        if (!error && data) setOrder(data as Order);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
+    Promise.resolve(
+      supabase
+        .from('orders')
+        .select('*')
+        .eq('id', orderId)
+        .maybeSingle()
+        .then(({ data, error }) => {
+          if (!error && data) setOrder(data as Order);
+          setLoading(false);
+        })
+    ).catch(() => setLoading(false));
   }, [orderId]);
 
   // Automatically open WhatsApp with the bill pre-filled once the order is loaded
