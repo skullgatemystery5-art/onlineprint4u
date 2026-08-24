@@ -58,6 +58,18 @@ function toAuthUser(fbUser: FirebaseUser): AuthUser {
   };
 }
 
+const SESSION_TIMEOUT_MS = 8000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('timeout')), ms);
+    promise.then(
+      (val) => { clearTimeout(timer); resolve(val); },
+      (err) => { clearTimeout(timer); reject(err); },
+    );
+  });
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -88,6 +100,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let unsubFb: (() => void) | undefined;
+    let settled = false;
+
+    const markLoadingDone = () => {
+      if (!settled) {
+        settled = true;
+        setLoading(false);
+      }
+    };
 
     // Listen to Supabase auth state (admin login) — only if configured
     let sub: { subscription: { unsubscribe: () => void } } | undefined;
@@ -103,7 +123,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             };
             setUser(authUser);
             await fetchProfile(authUser.uid);
-            setLoading(false);
+            markLoadingDone();
+          } else {
+            // Signed out or no session from this event
+            setUser(null);
+            setProfile(null);
+            markLoadingDone();
           }
         });
         sub = subData;
@@ -112,14 +137,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    // Check existing Supabase session on mount
+    // Check existing Supabase session on mount with timeout
     (async () => {
       if (!isSupabaseConfigured) {
-        setLoading(false);
+        markLoadingDone();
         return;
       }
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const { data: { session } } = await withTimeout(
+          supabase.auth.getSession(),
+          SESSION_TIMEOUT_MS,
+        );
         if (session?.user) {
           const authUser: AuthUser = {
             uid: session.user.id,
@@ -131,9 +159,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           await fetchProfile(authUser.uid);
         }
       } catch {
-        // Session check failed — non-blocking
+        // Session check failed or timed out — non-blocking, allow app to proceed
       }
-      setLoading(false);
+      markLoadingDone();
     })();
 
     // Also listen to Firebase auth if configured (phone OTP users)
@@ -143,8 +171,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const authUser = toAuthUser(fbUser);
           setUser(authUser);
           await fetchProfile(authUser.uid);
-          setLoading(false);
         }
+        markLoadingDone();
       });
     }
 

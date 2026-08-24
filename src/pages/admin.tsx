@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -59,6 +59,7 @@ export default function AdminPage() {
   const { user, profile, loading: authLoading } = useAuth();
   const [authorized, setAuthorized] = useState(false);
   const [checking, setChecking] = useState(true);
+  const [checkError, setCheckError] = useState(false);
   const [orders, setOrders] = useState<Order[]>([]);
   const [users, setUsers] = useState<Profile[]>([]);
   const [coupons, setCoupons] = useState<Coupon[]>([]);
@@ -85,8 +86,22 @@ export default function AdminPage() {
     active: true,
   });
 
+  // Safety timeout: if auth check takes too long, show retry instead of freezing
+  const checkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!checking && !authLoading) return;
+    checkTimerRef.current = setTimeout(() => {
+      setChecking(false);
+      setCheckError(true);
+    }, 10000);
+    return () => {
+      if (checkTimerRef.current) clearTimeout(checkTimerRef.current);
+    };
+  }, [checking, authLoading]);
+
   useEffect(() => {
     if (authLoading) return;
+    if (checkTimerRef.current) clearTimeout(checkTimerRef.current);
     if (!user) {
       navigate('/admin-login');
       return;
@@ -96,6 +111,7 @@ export default function AdminPage() {
     if (isAdmin) {
       setAuthorized(true);
       setChecking(false);
+      setCheckError(false);
       loadAll();
     } else {
       navigate('/dashboard');
@@ -111,6 +127,7 @@ export default function AdminPage() {
     }
     setLoading(true);
     setDbError(null);
+    const errors: string[] = [];
     try {
       const [ordersRes, usersRes, couponsRes, ratesRes, shippingRes, settingsRes] = await Promise.all([
         supabase.from('orders').select('*').order('created_at', { ascending: false }),
@@ -120,16 +137,20 @@ export default function AdminPage() {
         supabase.from('shipping_rates').select('*').order('base_rate', { ascending: true }),
         supabase.from('site_settings').select('*'),
       ]);
-      if (ordersRes.data) setOrders(ordersRes.data as Order[]);
-      if (usersRes.data) setUsers(usersRes.data as Profile[]);
-      if (couponsRes.data) setCoupons(couponsRes.data as Coupon[]);
-      if (ratesRes.data) setRates(ratesRes.data as PricingRate[]);
-      if (shippingRes.data) setShippingRates(shippingRes.data as ShippingRate[]);
-      if (settingsRes.data) {
+      if (ordersRes.error) errors.push('orders'); else if (ordersRes.data) setOrders(ordersRes.data as Order[]);
+      if (usersRes.error) errors.push('profiles'); else if (usersRes.data) setUsers(usersRes.data as Profile[]);
+      if (couponsRes.error) errors.push('coupons'); else if (couponsRes.data) setCoupons(couponsRes.data as Coupon[]);
+      if (ratesRes.error) errors.push('pricing'); else if (ratesRes.data) setRates(ratesRes.data as PricingRate[]);
+      if (shippingRes.error) errors.push('shipping'); else if (shippingRes.data) setShippingRates(shippingRes.data as ShippingRate[]);
+      if (settingsRes.error) errors.push('settings');
+      else if (settingsRes.data) {
         const map: Record<string, string> = {};
         (settingsRes.data as Array<{ key: string; value: string }>).forEach((s) => { map[s.key] = s.value; });
         setSiteSettings(map);
         setSettingsForm(map);
+      }
+      if (errors.length > 0) {
+        setDbError(`Failed to load some data (${errors.join(', ')}). Check your database tables and columns. Use Retry to try again.`);
       }
     } catch {
       setDbError('Failed to load data. Please check your database configuration and try again.');
@@ -271,12 +292,38 @@ export default function AdminPage() {
     }
   };
 
+  if (checkError) {
+    return (
+      <>
+        <Header />
+        <main className="flex min-h-screen flex-col items-center justify-center gap-4 px-4">
+          <XCircle className="h-16 w-16 text-destructive" />
+          <h1 className="font-display text-2xl font-bold">Connection Timeout</h1>
+          <p className="text-muted-foreground text-center max-w-md">
+            The access check is taking too long. This usually means the database connection is failing.
+          </p>
+          <div className="flex gap-3">
+            <Button onClick={() => { setCheckError(false); setChecking(true); setAuthorized(false); }}>
+              Retry
+            </Button>
+            <Button variant="outline" onClick={() => navigate('/admin-login')}>
+              Go to Login
+            </Button>
+          </div>
+        </main>
+      </>
+    );
+  }
+
   if (checking || authLoading) {
     return (
       <>
         <Header />
         <main className="flex min-h-screen items-center justify-center">
-          <div className="text-muted-foreground">Checking access...</div>
+          <div className="flex flex-col items-center gap-3">
+            <Loader2 className="h-6 w-6 animate-spin text-primary" />
+            <div className="text-muted-foreground">Checking access...</div>
+          </div>
         </main>
       </>
     );
