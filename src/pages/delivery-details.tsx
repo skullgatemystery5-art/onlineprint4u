@@ -30,7 +30,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { supabase, type Address } from '@/lib/supabase';
+import { supabase, isSupabaseConfigured, type Address } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useCart } from '@/lib/cart-context';
 import { formatINR } from '@/lib/pricing';
@@ -88,18 +88,28 @@ export default function DeliveryDetailsPage() {
 
   const loadAddresses = async () => {
     if (!user) return;
+    if (!isSupabaseConfigured) {
+      setShowForm(true);
+      setLoadingAddresses(false);
+      return;
+    }
     setLoadingAddresses(true);
-    const { data } = await supabase
-      .from('addresses')
-      .select('*')
-      .eq('user_id', user.uid)
-      .order('created_at', { ascending: false });
-    if (data && data.length > 0) {
-      setAddresses(data as Address[]);
-      const def = data.find((a) => a.is_default) ?? data[0];
-      setSelectedAddressId(def.id);
-      setPincode(def.pincode);
-    } else {
+    try {
+      const { data, error } = await supabase
+        .from('addresses')
+        .select('*')
+        .eq('user_id', user.uid)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      if (data && data.length > 0) {
+        setAddresses(data as Address[]);
+        const def = data.find((a) => a.is_default) ?? data[0];
+        setSelectedAddressId(def.id);
+        setPincode(def.pincode);
+      } else {
+        setShowForm(true);
+      }
+    } catch {
       setShowForm(true);
     }
     setLoadingAddresses(false);

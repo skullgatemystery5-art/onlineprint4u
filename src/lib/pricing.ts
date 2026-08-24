@@ -25,7 +25,7 @@ export const PREMIUM_PHOTO_RATE = 25;
 // Hardcoded print-per-page rates keyed by `${gsm}_${printType}_${side}`
 export const PRINT_RATES: Record<string, number> = {
   '70_bw_single': 0.90,
-  '70_bw_double': 0.40,
+  '70_bw_double': 0.45,
   '70_color_single': 5.00,
   '70_color_double': 4.00,
   '75_bw_single': 1.00,
@@ -178,7 +178,7 @@ export const RATE_CARD = [
   {
     gsm: '70 GSM Economy',
     bwSingle: 0.90,
-    bwDouble: 0.4,
+    bwDouble: 0.45,
     colorSingle: 5.0,
     colorDouble: 4.0,
   },

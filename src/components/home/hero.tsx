@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { useState } from 'react';
 import {
   Upload,
   FileText,
@@ -11,6 +12,7 @@ import {
   Clock,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { RateChartModal } from '@/components/rate-chart-modal';
 
 const stats = [
   { value: '50K+', label: 'Documents Printed' },
@@ -27,6 +29,8 @@ const steps = [
 ];
 
 export function Hero() {
+  const [rateChartOpen, setRateChartOpen] = useState(false);
+
   return (
     <section className="relative overflow-hidden">
       <div className="hero-grid absolute inset-0 opacity-50" />
@@ -53,11 +57,14 @@ export function Hero() {
                 <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
               </Button>
             </Link>
-            <Link to="/#rate-card">
-              <Button size="lg" variant="outline" className="w-full sm:w-auto">
-                View Rate Card
-              </Button>
-            </Link>
+            <Button
+              size="lg"
+              variant="outline"
+              className="w-full sm:w-auto"
+              onClick={() => setRateChartOpen(true)}
+            >
+              View Rate Chart
+            </Button>
           </div>
         </div>
 
@@ -102,6 +109,8 @@ export function Hero() {
           </span>
         </div>
       </div>
+
+      <RateChartModal open={rateChartOpen} onClose={() => setRateChartOpen(false)} />
     </section>
   );
 }
