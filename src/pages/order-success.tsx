@@ -47,6 +47,7 @@ export default function OrderSuccessPage() {
     setAutoOpened(true);
     openWhatsAppBill(order);
   }, [order, autoOpened]);
+  // If WhatsApp can't open (invalid/missing phone), show a fallback message
 
   return (
     <>
@@ -114,6 +115,9 @@ export default function OrderSuccessPage() {
               >
                 <MessageCircle className="h-4 w-4" /> Open WhatsApp to Send Bill
               </Button>
+              {!order?.shipping_phone && (
+                <p className="mt-2 text-xs text-amber-600">No phone number on this order — WhatsApp bill is unavailable. You can still track this order from your dashboard.</p>
+              )}
             </div>
 
             <div className="mt-6 flex flex-col gap-3 sm:flex-row">

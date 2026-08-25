@@ -4,6 +4,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth-context';
 import { formatINR, PAPER_GSM_OPTIONS, BINDING_OPTIONS } from '@/lib/pricing';
 import { supabase, isSupabaseConfigured, type PricingRate, type ShippingRate, type PaperGsm } from '@/lib/supabase';
+import { siteConfig } from '@/lib/site-config';
+import { isValidWhatsAppPhone } from '@/lib/whatsapp';
 
 function getRatePrice(rates: PricingRate[], category: string, key: string): number {
   return rates.find((r) => r.category === category && r.key === key)?.price ?? 0;
@@ -133,18 +135,20 @@ export function FloatingWidgets() {
             <LogIn className="h-5 w-5" />
           </button>
         )}
-        <a
-          href="https://wa.me/917858093865"
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label="Chat on WhatsApp"
-          className="flex h-14 w-14 items-center justify-center rounded-full shadow-xl transition-transform duration-200 hover:scale-110 active:scale-95"
-          style={{ backgroundColor: '#25D366', animation: 'wa-bounce 3s ease-in-out infinite' }}
-        >
-          <svg viewBox="0 0 32 32" className="h-8 w-8 fill-white" xmlns="http://www.w3.org/2000/svg">
-            <path d="M16.003 2C8.28 2 2 8.28 2 16.003c0 2.478.65 4.806 1.785 6.826L2 30l7.368-1.764A13.94 13.94 0 0016.003 30C23.72 30 30 23.72 30 16.003 30 8.28 23.72 2 16.003 2zm0 25.385a11.31 11.31 0 01-5.776-1.582l-.413-.247-4.37 1.046 1.067-4.258-.27-.436a11.34 11.34 0 01-1.62-5.905C4.621 9.766 9.767 4.62 16.003 4.62c3.024 0 5.866 1.179 8.003 3.319a11.26 11.26 0 013.313 8.064c0 6.237-5.145 11.382-11.316 11.382zm6.231-8.53c-.342-.17-2.022-1-2.338-1.113-.315-.113-.544-.17-.773.171-.23.342-.886 1.113-1.086 1.343-.2.228-.4.257-.742.086-.342-.171-1.445-.532-2.752-1.697-1.017-.908-1.703-2.03-1.903-2.371-.2-.342-.022-.527.15-.697.155-.154.342-.4.513-.6.172-.2.229-.342.342-.57.115-.228.058-.428-.028-.599-.086-.171-.773-1.864-1.059-2.55-.279-.67-.562-.578-.773-.59l-.657-.01c-.228 0-.599.086-.913.427-.314.342-1.2 1.172-1.2 2.857 0 1.686 1.229 3.315 1.4 3.544.171.228 2.42 3.697 5.864 5.184.82.354 1.46.565 1.957.722.823.261 1.572.224 2.164.136.66-.099 2.022-.827 2.308-1.626.285-.8.285-1.484.199-1.627-.085-.143-.313-.228-.656-.399z" />
-          </svg>
-        </a>
+        {isValidWhatsAppPhone(siteConfig.contact.phoneRaw) && (
+          <a
+            href={`https://wa.me/${siteConfig.contact.phoneRaw}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Chat on WhatsApp"
+            className="flex h-14 w-14 items-center justify-center rounded-full shadow-xl transition-transform duration-200 hover:scale-110 active:scale-95"
+            style={{ backgroundColor: '#25D366', animation: 'wa-bounce 3s ease-in-out infinite' }}
+          >
+            <svg viewBox="0 0 32 32" className="h-8 w-8 fill-white" xmlns="http://www.w3.org/2000/svg">
+              <path d="M16.003 2C8.28 2 2 8.28 2 16.003c0 2.478.65 4.806 1.785 6.826L2 30l7.368-1.764A13.94 13.94 0 0016.003 30C23.72 30 30 23.72 30 16.003 30 8.28 23.72 2 16.003 2zm0 25.385a11.31 11.31 0 01-5.776-1.582l-.413-.247-4.37 1.046 1.067-4.258-.27-.436a11.34 11.34 0 01-1.62-5.905C4.621 9.766 9.767 4.62 16.003 4.62c3.024 0 5.866 1.179 8.003 3.319a11.26 11.26 0 013.313 8.064c0 6.237-5.145 11.382-11.316 11.382zm6.231-8.53c-.342-.17-2.022-1-2.338-1.113-.315-.113-.544-.17-.773.171-.23.342-.886 1.113-1.086 1.343-.2.228-.4.257-.742.086-.342-.171-1.445-.532-2.752-1.697-1.017-.908-1.703-2.03-1.903-2.371-.2-.342-.022-.527.15-.697.155-.154.342-.4.513-.6.172-.2.229-.342.342-.57.115-.228.058-.428-.028-.599-.086-.171-.773-1.864-1.059-2.55-.279-.67-.562-.578-.773-.59l-.657-.01c-.228 0-.599.086-.913.427-.314.342-1.2 1.172-1.2 2.857 0 1.686 1.229 3.315 1.4 3.544.171.228 2.42 3.697 5.864 5.184.82.354 1.46.565 1.957.722.823.261 1.572.224 2.164.136.66-.099 2.022-.827 2.308-1.626.285-.8.285-1.484.199-1.627-.085-.143-.313-.228-.656-.399z" />
+            </svg>
+          </a>
+        )}
       </div>
 
       {open && (

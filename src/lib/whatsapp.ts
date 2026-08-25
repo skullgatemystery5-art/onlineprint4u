@@ -4,7 +4,18 @@ function formatINR(amount: number): string {
   return `Rs. ${amount.toFixed(2)}`;
 }
 
-export function buildWhatsAppBillURL(order: Order): string {
+export function isValidWhatsAppPhone(phone: string | null | undefined): boolean {
+  if (!phone) return false;
+  const cleaned = phone.replace(/\D/g, '');
+  return cleaned.length >= 10 && cleaned.length <= 15;
+}
+
+export function buildWhatsAppBillURL(order: Order): string | null {
+  let phone = order.shipping_phone?.replace(/\D/g, '') ?? '';
+  if (!isValidWhatsAppPhone(phone)) return null;
+  if (phone.startsWith('91') && phone.length === 12) {
+    phone = phone.slice(2);
+  }
   const items = order.items as Array<{
     fileName: string;
     pages: number;
@@ -39,15 +50,12 @@ export function buildWhatsAppBillURL(order: Order): string {
     `*Total: ${formatINR(order.total)}*\n\n` +
     `Track your order anytime from your dashboard. Thank you for choosing ONLINE PRINT 4U!`;
 
-  let phone = order.shipping_phone.replace(/\D/g, '');
-  if (phone.startsWith('91') && phone.length === 12) {
-    phone = phone.slice(2);
-  }
-
   return `https://wa.me/91${phone}?text=${encodeURIComponent(message)}`;
 }
 
-export function openWhatsAppBill(order: Order): void {
+export function openWhatsAppBill(order: Order): boolean {
   const url = buildWhatsAppBillURL(order);
+  if (!url) return false;
   window.open(url, '_blank', 'noopener,noreferrer');
+  return true;
 }

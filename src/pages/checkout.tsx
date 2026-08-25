@@ -31,6 +31,7 @@ import { useAuth } from '@/lib/auth-context';
 import { supabase, isSupabaseConfigured, type Address, type Order } from '@/lib/supabase';
 import { formatINR } from '@/lib/pricing';
 import { siteConfig, advancePercentage } from '@/lib/site-config';
+import { isValidWhatsAppPhone } from '@/lib/whatsapp';
 import { cn } from '@/lib/utils';
 import { formatWeight, type CourierType } from '@/lib/shipping';
 import { ShippingPolicyModal } from '@/components/shipping-policy-modal';
@@ -1065,6 +1066,7 @@ export default function CheckoutPage() {
                 <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
                   <ShieldCheck className="h-3 w-3" /> 100% Document Privacy Guaranteed
                 </div>
+              {isValidWhatsAppPhone(siteConfig.contact.phoneRaw) && (
                 <a
                   href={`https://wa.me/${siteConfig.contact.phoneRaw}`}
                   target="_blank"
@@ -1073,6 +1075,7 @@ export default function CheckoutPage() {
                 >
                   <MessageCircle className="h-4 w-4" /> Chat with us on WhatsApp
                 </a>
+              )}
               </div>
             </div>
           </div>

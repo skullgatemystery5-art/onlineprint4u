@@ -150,7 +150,7 @@ Deno.serve(async (req: Request) => {
     let whatsappResult = "skipped";
     const waToken = Deno.env.get("WHATSAPP_TOKEN");
     const waPhoneId = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID");
-    if (waToken && waPhoneId) {
+    if (waToken && waPhoneId && ownerWhatsApp) {
       try {
         const waRes = await fetch(
           `https://graph.facebook.com/v18.0/${waPhoneId}/messages`,
@@ -173,7 +173,7 @@ Deno.serve(async (req: Request) => {
         whatsappResult = `error:${String(e)}`;
       }
     } else {
-      console.log("[WA] WHATSAPP_TOKEN/WHATSAPP_PHONE_NUMBER_ID not set. WhatsApp message:\n" + whatsappMessage);
+      console.log("[WA] WHATSAPP_TOKEN/WHATSAPP_PHONE_NUMBER_ID not set or ownerWhatsApp missing. WhatsApp message skipped.");
     }
 
     return new Response(
