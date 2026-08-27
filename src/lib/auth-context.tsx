@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { supabase, isSupabaseConfigured, type Profile } from './supabase';
 import type { User as FirebaseUser } from 'firebase/auth';
 import {
@@ -75,7 +75,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
-  const [recaptchaVerifier, setRecaptchaVerifier] = useState<RecaptchaVerifier | null>(null);
+  const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
+
+  const clearRecaptcha = useCallback(() => {
+    const verifier = recaptchaVerifierRef.current;
+    if (verifier) {
+      try {
+        verifier.clear();
+      } catch {
+        // ignore
+      }
+      recaptchaVerifierRef.current = null;
+    }
+  }, []);
 
   const fetchProfile = useCallback(async (uid: string) => {
     if (!isSupabaseConfigured) {
@@ -189,36 +201,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       const fullPhone = phone.startsWith('+') ? phone : `+91${phone}`;
       try {
-        if (recaptchaVerifier) {
-          try {
-            recaptchaVerifier.clear();
-          } catch {
-            // ignore
-          }
-        }
+        clearRecaptcha();
+
+        const container = document.getElementById(recaptchaContainerId);
+        if (container) container.innerHTML = '';
 
         const verifier = new RecaptchaVerifier(firebaseAuth, recaptchaContainerId, {
           size: 'invisible',
         });
-        setRecaptchaVerifier(verifier);
+        recaptchaVerifierRef.current = verifier;
 
         const result = await signInWithPhoneNumber(firebaseAuth, fullPhone, verifier);
         setConfirmationResult(result);
         return { error: null };
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Failed to send OTP';
-        if (recaptchaVerifier) {
-          try {
-            recaptchaVerifier.clear();
-          } catch {
-            // ignore
-          }
-          setRecaptchaVerifier(null);
-        }
+        clearRecaptcha();
         return { error: msg };
       }
     },
-    [recaptchaVerifier]
+    [clearRecaptcha]
   );
 
   const verifyPhoneOtp = useCallback(
@@ -250,12 +252,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         await fetchProfile(authUser.uid);
 
-        try {
-          recaptchaVerifier?.clear();
-        } catch {
-          // ignore
-        }
-        setRecaptchaVerifier(null);
+        clearRecaptcha();
         setConfirmationResult(null);
         return { error: null };
       } catch (err) {
@@ -272,7 +269,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: error.message || 'Invalid or expired OTP' };
       }
     },
-    [confirmationResult, recaptchaVerifier, fetchProfile]
+    [confirmationResult, fetchProfile, clearRecaptcha]
   );
 
   const sendEmailOtp = useCallback(
@@ -361,18 +358,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // ignore
       }
     }
-    if (recaptchaVerifier) {
-      try {
-        recaptchaVerifier.clear();
-      } catch {
-        // ignore
-      }
-      setRecaptchaVerifier(null);
-    }
+    clearRecaptcha();
     setConfirmationResult(null);
     setUser(null);
     setProfile(null);
-  }, [recaptchaVerifier]);
+  }, [clearRecaptcha]);
 
   return (
     <AuthContext.Provider
