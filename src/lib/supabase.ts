@@ -58,6 +58,7 @@ export type OrderItem = {
   copies: number;
   printType: 'bw' | 'color';
   side: 'single' | 'double';
+  orientation: 'portrait' | 'landscape';
   paperGsm: PaperGsm;
   binding: 'none' | 'spiral' | 'soft' | 'hard' | 'thesis';
   lamination: 'none' | 'transparent';

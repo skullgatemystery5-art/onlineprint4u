@@ -148,6 +148,7 @@ export default function CartPage() {
                         <span>{item.pages} pages</span>
                         <span>{item.printType === 'bw' ? 'B&W' : 'Color'}</span>
                         <span>{item.side === 'single' ? 'Single' : 'Double'} side</span>
+                        <span className="capitalize">{item.orientation}</span>
                         <span>{item.paperGsm} GSM</span>
                         {item.binding !== 'none' && <span className="capitalize">{item.binding} binding</span>}
                         {item.lamination !== 'none' && <span>Laminated</span>}

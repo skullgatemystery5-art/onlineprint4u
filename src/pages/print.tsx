@@ -50,6 +50,7 @@ export default function PrintPage() {
   const [options, setOptions] = useState({
     printType: 'bw' as 'bw' | 'color',
     side: 'single' as 'single' | 'double',
+    orientation: 'portrait' as 'portrait' | 'landscape',
     paperGsm: '75' as PaperGsm,
     binding: 'none' as OrderItem['binding'],
     lamination: 'none' as 'none' | 'transparent',
@@ -72,6 +73,7 @@ export default function PrintPage() {
       copies: options.copies,
       printType: options.printType,
       side: options.side,
+      orientation: options.orientation,
       paperGsm: options.paperGsm,
       binding: options.binding,
       lamination: options.lamination,
@@ -120,6 +122,7 @@ export default function PrintPage() {
         copies: options.copies,
         printType: options.printType,
         side: options.side,
+        orientation: options.orientation,
         paperGsm: options.paperGsm,
         binding: options.binding,
         lamination: options.lamination,
@@ -257,6 +260,31 @@ export default function PrintPage() {
                         >
                           <p className="font-display text-sm font-semibold">{opt.label}</p>
                           {opt.desc && <p className="text-xs text-emerald-600">{opt.desc}</p>}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Print Orientation */}
+                  <div>
+                    <Label className="mb-2 block">Print Orientation</Label>
+                    <div className="grid grid-cols-2 gap-3">
+                      {[
+                        { key: 'portrait', label: 'Portrait', desc: 'Vertical (default)' },
+                        { key: 'landscape', label: 'Landscape', desc: 'Horizontal' },
+                      ].map((opt) => (
+                        <button
+                          key={opt.key}
+                          onClick={() => setOptions({ ...options, orientation: opt.key as 'portrait' | 'landscape' })}
+                          className={cn(
+                            'rounded-xl border-2 p-4 text-left transition-all',
+                            options.orientation === opt.key
+                              ? 'border-primary bg-primary/5'
+                              : 'border-border hover:border-primary/50'
+                          )}
+                        >
+                          <p className="font-display text-sm font-semibold">{opt.label}</p>
+                          <p className="text-xs text-muted-foreground">{opt.desc}</p>
                         </button>
                       ))}
                     </div>
@@ -443,6 +471,10 @@ export default function PrintPage() {
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Print Type</span>
                     <span>{options.printType === 'bw' ? 'Black & White' : 'Color'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Orientation</span>
+                    <span className="capitalize">{options.orientation}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Paper GSM</span>
