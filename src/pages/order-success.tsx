@@ -11,7 +11,7 @@ import {
 import { Header } from '@/components/header';
 import { Footer } from '@/components/footer';
 import { Button } from '@/components/ui/button';
-import { supabase, type Order } from '@/lib/supabase';
+import { getOrder, isFirebaseConfigured, type Order } from '@/lib/supabase';
 import { formatINR } from '@/lib/pricing';
 import { openWhatsAppBill } from '@/lib/whatsapp';
 
@@ -24,15 +24,16 @@ export default function OrderSuccessPage() {
 
   useEffect(() => {
     if (!orderId) return;
-    supabase
-      .from('orders')
-      .select('*')
-      .eq('id', orderId)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (data) setOrder(data as Order);
+    if (!isFirebaseConfigured) {
+      setLoading(false);
+      return;
+    }
+    getOrder(orderId)
+      .then((data) => {
+        if (data) setOrder(data);
         setLoading(false);
-      });
+      })
+      .catch(() => setLoading(false));
   }, [orderId]);
 
   // Automatically open WhatsApp with the bill pre-filled once the order is loaded
@@ -41,6 +42,7 @@ export default function OrderSuccessPage() {
     setAutoOpened(true);
     openWhatsAppBill(order);
   }, [order, autoOpened]);
+  // If WhatsApp can't open (invalid/missing phone), show a fallback message
 
   return (
     <>
@@ -108,6 +110,9 @@ export default function OrderSuccessPage() {
               >
                 <MessageCircle className="h-4 w-4" /> Open WhatsApp to Send Bill
               </Button>
+              {!order?.shipping_phone && (
+                <p className="mt-2 text-xs text-amber-600">No phone number on this order — WhatsApp bill is unavailable. You can still track this order from your dashboard.</p>
+              )}
             </div>
 
             <div className="mt-6 flex flex-col gap-3 sm:flex-row">

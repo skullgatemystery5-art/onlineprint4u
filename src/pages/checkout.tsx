@@ -28,10 +28,19 @@ import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { useCart } from '@/lib/cart-context';
 import { useAuth } from '@/lib/auth-context';
-import { supabase, type Address, type Order } from '@/lib/supabase';
+import {
+  isFirebaseConfigured,
+  getAddresses,
+  insertAddress,
+  insertOrder,
+  insertStatusLog,
+  type Order,
+  type Address,
+} from '@/lib/supabase';
+import { sendOwnerNotifications } from '@/lib/notify';
 import { formatINR } from '@/lib/pricing';
 import { siteConfig, advancePercentage } from '@/lib/site-config';
-import { sendOwnerNotifications } from '@/lib/notify';
+import { isValidWhatsAppPhone } from '@/lib/whatsapp';
 import { cn } from '@/lib/utils';
 import { formatWeight, type CourierType } from '@/lib/shipping';
 import { ShippingPolicyModal } from '@/components/shipping-policy-modal';
@@ -130,22 +139,25 @@ export default function CheckoutPage() {
   // --- Load addresses when user is available ---
   useEffect(() => {
     if (!user) return;
-    // Fetch saved addresses from Supabase (RLS allows user to see own)
-    supabase
-      .from('addresses')
-      .select('*')
-      .eq('user_id', user.uid)
-      .order('is_default', { ascending: false })
-      .then(({ data }) => {
-        if (data && data.length > 0) {
-          setAddresses(data as Address[]);
+    if (!isFirebaseConfigured) {
+      setUseNewAddress(true);
+      return;
+    }
+    (async () => {
+      try {
+        const data = await getAddresses(user.uid);
+        if (data.length > 0) {
+          setAddresses(data);
           const def = data.find((a) => a.is_default) ?? data[0];
           if (def) setSelectedAddress(def.id);
           else setUseNewAddress(true);
         } else {
           setUseNewAddress(true);
         }
-      });
+      } catch {
+        setUseNewAddress(true);
+      }
+    })();
     // Pre-fill name/phone/email from profile
     if (profile) {
       setNewAddr((prev) => ({
@@ -290,58 +302,53 @@ export default function CheckoutPage() {
       const deliveryLabel =
         shippingMethods.find((m) => m.type === selectedCourier)?.label ?? selectedCourier;
 
-      const { data, error } = await supabase
-        .from('orders')
-        .insert({
-          order_number: orderNumber,
-          user_id: user.uid,
-          items: items,
-          subtotal: totals.subtotal,
-          discount: totals.discount,
-          coupon_code: coupon?.code ?? null,
-          shipping_cost: totals.shippingCost,
-          total: totals.total,
-          payment_method: paymentMethod,
-          payment_status: 'paid',
-          order_status: 'placed',
-          shipping_name: shippingName,
-          shipping_phone: shippingPhone,
-          shipping_address: shippingAddress,
-          shipping_pincode: shippingPin,
-          courier_type: selectedCourier,
-          delivery_type_label: deliveryLabel,
-          payment_screenshot_url: null,
-          customer_email: shippingEmail || emailInput || null,
-          notes: `Razorpay Payment ID: ${razorpayPaymentId}`,
-        })
-        .select()
-        .single();
+      const order = await insertOrder({
+        order_number: orderNumber,
+        user_id: user.uid,
+        items: items,
+        subtotal: totals.subtotal,
+        discount: totals.discount,
+        coupon_code: coupon?.code ?? null,
+        shipping_cost: totals.shippingCost,
+        total: totals.total,
+        payment_method: paymentMethod,
+        payment_status: 'paid',
+        order_status: 'placed',
+        shipping_name: shippingName,
+        shipping_phone: shippingPhone,
+        shipping_address: shippingAddress,
+        shipping_pincode: shippingPin,
+        courier_type: selectedCourier,
+        delivery_type_label: deliveryLabel,
+        payment_screenshot_url: null,
+        customer_email: shippingEmail || emailInput || null,
+        tracking_id: null,
+        notes: `Razorpay Payment ID: ${razorpayPaymentId}`,
+      });
 
-      if (error) throw error;
+      if (!order) throw new Error('Failed to save order');
 
-      const order = data as Order;
-
-      // Save address to Supabase for future use
+      // Save address to Firestore for future use
       if (useNewAddress) {
-        const newAddrRecord = {
-          id: crypto.randomUUID(),
-          user_id: user.uid,
-          label: 'Checkout',
-          name: newAddr.name,
-          phone: newAddr.phone,
-          email: newAddr.email || null,
-          line1: newAddr.line1,
-          line2: newAddr.line2 || null,
-          house_flat: null,
-          street_area: null,
-          landmark: null,
-          city: newAddr.city,
-          state: newAddr.state,
-          pincode: newAddr.pincode,
-          is_default: addresses.length === 0,
-        };
         try {
-          await supabase.from('addresses').insert(newAddrRecord);
+          await insertAddress({
+            user_id: user.uid,
+            label: 'Checkout',
+            name: newAddr.name,
+            phone: newAddr.phone,
+            alternate_phone: null,
+            email: newAddr.email || null,
+            line1: newAddr.line1,
+            line2: newAddr.line2 || null,
+            house_flat: null,
+            street_area: null,
+            landmark: null,
+            city: newAddr.city,
+            state: newAddr.state,
+            pincode: newAddr.pincode,
+            delivery_instructions: null,
+            is_default: addresses.length === 0,
+          });
         } catch {
           // Non-blocking
         }
@@ -349,7 +356,7 @@ export default function CheckoutPage() {
 
       // Insert status log
       try {
-        await supabase.from('order_status_log').insert({
+        await insertStatusLog({
           order_id: order.id,
           status: 'placed',
           note: 'Order placed successfully',
@@ -358,9 +365,9 @@ export default function CheckoutPage() {
         // Non-blocking
       }
 
-      // Send notifications (best-effort)
+      // Send owner notification (WhatsApp via wa.me — opens a new tab)
       try {
-        sendOwnerNotifications(order);
+        await sendOwnerNotifications(order);
       } catch {
         // Non-blocking
       }
@@ -1026,6 +1033,7 @@ export default function CheckoutPage() {
                 <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
                   <ShieldCheck className="h-3 w-3" /> 100% Document Privacy Guaranteed
                 </div>
+              {isValidWhatsAppPhone(siteConfig.contact.phoneRaw) && (
                 <a
                   href={`https://wa.me/${siteConfig.contact.phoneRaw}`}
                   target="_blank"
@@ -1034,6 +1042,7 @@ export default function CheckoutPage() {
                 >
                   <MessageCircle className="h-4 w-4" /> Chat with us on WhatsApp
                 </a>
+              )}
               </div>
             </div>
           </div>

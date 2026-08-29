@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth-context';
-import { supabase } from '@/lib/supabase';
+import { upsertProfile } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 
 type SignupMode = 'email' | 'phone';
@@ -82,13 +82,13 @@ export default function SignupPage() {
     // Update profile with the name they entered
     try {
       if (authUser) {
-        await supabase.from('profiles').upsert({
+        await upsertProfile({
           id: authUser.uid,
           email: authUser.email ?? email,
           full_name: name,
           phone: authUser.phoneNumber ?? `+91${phone}`,
           role: 'user',
-        }, { onConflict: 'id' });
+        });
       }
     } catch {
       // Non-blocking — profile will be created on next login
