@@ -1,5 +1,10 @@
 import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
-import { supabase, isSupabaseConfigured, type Profile } from './supabase';
+import {
+  getProfile,
+  upsertProfile,
+  isFirebaseConfigured,
+  type Profile,
+} from './supabase';
 import type { User as FirebaseUser } from 'firebase/auth';
 import {
   signInWithPhoneNumber,
@@ -10,7 +15,7 @@ import {
   signInWithEmailAndPassword,
   sendPasswordResetEmail,
 } from 'firebase/auth';
-import { firebaseAuth, isFirebaseConfigured } from './firebase';
+import { firebaseAuth } from './firebase';
 
 type AuthUser = {
   uid: string;
@@ -58,18 +63,6 @@ function toAuthUser(fbUser: FirebaseUser): AuthUser {
   };
 }
 
-const SESSION_TIMEOUT_MS = 8000;
-
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('timeout')), ms);
-    promise.then(
-      (val) => { clearTimeout(timer); resolve(val); },
-      (err) => { clearTimeout(timer); reject(err); },
-    );
-  });
-}
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -90,17 +83,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const fetchProfile = useCallback(async (uid: string) => {
-    if (!isSupabaseConfigured) {
+    if (!isFirebaseConfigured) {
       setProfile(null);
       return;
     }
     try {
-      const { data } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', uid)
-        .maybeSingle();
-      setProfile(data as Profile | null);
+      const data = await getProfile(uid);
+      setProfile(data);
     } catch {
       setProfile(null);
     }
@@ -121,62 +110,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
-    // Listen to Supabase auth state (admin login) — only if configured
-    let sub: { subscription: { unsubscribe: () => void } } | undefined;
-    if (isSupabaseConfigured) {
-      try {
-        const { data: subData } = supabase.auth.onAuthStateChange(async (_event, session) => {
-          if (session?.user) {
-            const authUser: AuthUser = {
-              uid: session.user.id,
-              phoneNumber: session.user.phone ?? null,
-              email: session.user.email ?? null,
-              displayName: session.user.user_metadata?.full_name ?? 'Admin',
-            };
-            setUser(authUser);
-            await fetchProfile(authUser.uid);
-            markLoadingDone();
-          } else {
-            // Signed out or no session from this event
-            setUser(null);
-            setProfile(null);
-            markLoadingDone();
-          }
-        });
-        sub = subData;
-      } catch {
-        // Supabase auth listener failed — non-blocking
-      }
-    }
-
-    // Check existing Supabase session on mount with timeout
-    (async () => {
-      if (!isSupabaseConfigured) {
-        markLoadingDone();
-        return;
-      }
-      try {
-        const { data: { session } } = await withTimeout(
-          supabase.auth.getSession(),
-          SESSION_TIMEOUT_MS,
-        );
-        if (session?.user) {
-          const authUser: AuthUser = {
-            uid: session.user.id,
-            phoneNumber: session.user.phone ?? null,
-            email: session.user.email ?? null,
-            displayName: session.user.user_metadata?.full_name ?? 'Admin',
-          };
-          setUser(authUser);
-          await fetchProfile(authUser.uid);
-        }
-      } catch {
-        // Session check failed or timed out — non-blocking, allow app to proceed
-      }
-      markLoadingDone();
-    })();
-
-    // Also listen to Firebase auth if configured (phone OTP users)
     if (isFirebaseConfigured && firebaseAuth) {
       unsubFb = onAuthStateChanged(firebaseAuth, async (fbUser) => {
         if (fbUser) {
@@ -186,10 +119,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         markLoadingDone();
       });
+    } else {
+      markLoadingDone();
     }
 
     return () => {
-      if (sub) sub.subscription.unsubscribe();
       if (unsubFb) unsubFb();
     };
   }, [fetchProfile]);
@@ -237,18 +171,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const authUser = toAuthUser(fbUserCred.user);
         setUser(authUser);
 
-        // Create or update profile in Supabase using Firebase UID
         const phone = authUser.phoneNumber ?? '';
         const displayName = authUser.displayName ?? 'User';
         const email = authUser.email ?? '';
 
-        await supabase.from('profiles').upsert({
+        await upsertProfile({
           id: authUser.uid,
           email,
           full_name: displayName,
           phone,
           role: 'user',
-        }, { onConflict: 'id' });
+        });
 
         await fetchProfile(authUser.uid);
 
@@ -288,33 +221,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const adminLogin = useCallback(
     async (email: string, password: string): Promise<{ error: string | null }> => {
-      if (!isSupabaseConfigured) {
-        return { error: 'Database is not configured. Please set up valid credentials to enable login.' };
+      if (!isFirebaseConfigured || !firebaseAuth) {
+        return { error: 'Firebase is not configured. Please contact support.' };
       }
       try {
-        const { data, error: signInError } = await supabase.auth.signInWithPassword({
-          email: email.trim(),
-          password,
-        });
-        if (signInError || !data.user) {
-          const msg = signInError?.message ?? 'Login failed.';
-          if (msg.toLowerCase().includes('invalid login') || msg.toLowerCase().includes('invalid credentials')) {
-            return { error: 'Invalid email or password.' };
-          }
-          return { error: msg };
+        const userCred = await signInWithEmailAndPassword(firebaseAuth, email.trim(), password);
+        if (!userCred.user) {
+          return { error: 'Login failed. No user returned.' };
         }
 
         const authUser: AuthUser = {
-          uid: data.user.id,
-          phoneNumber: data.user.phone ?? null,
-          email: data.user.email ?? null,
-          displayName: data.user.user_metadata?.full_name ?? 'Admin',
+          uid: userCred.user.uid,
+          phoneNumber: userCred.user.phoneNumber,
+          email: userCred.user.email,
+          displayName: userCred.user.displayName ?? 'Admin',
         };
         setUser(authUser);
+
+        // Ensure admin profile exists in Firestore
+        await upsertProfile({
+          id: authUser.uid,
+          email: authUser.email ?? email.trim(),
+          full_name: authUser.displayName ?? 'Admin',
+          phone: authUser.phoneNumber ?? '',
+          role: 'admin',
+        });
+
         await fetchProfile(authUser.uid);
         return { error: null };
       } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Login failed. Please try again.';
+        const error = err as { code?: string; message?: string };
+        if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found') {
+          return { error: 'Invalid email or password.' };
+        }
+        if (error.code === 'auth/too-many-requests') {
+          return { error: 'Too many failed attempts. Please try again later.' };
+        }
+        const msg = error.message ?? 'Login failed. Please try again.';
         return { error: msg };
       }
     },
@@ -323,20 +266,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const adminResetPassword = useCallback(
     async (email: string): Promise<{ error: string | null }> => {
-      if (!isSupabaseConfigured) {
-        return { error: 'Database is not configured. Please contact support.' };
+      if (!isFirebaseConfigured || !firebaseAuth) {
+        return { error: 'Firebase is not configured. Please contact support.' };
       }
       try {
-        const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim());
-        if (resetError) {
-          if (resetError.message.toLowerCase().includes('user not found')) {
-            return { error: 'No account found with this email address.' };
-          }
-          return { error: resetError.message };
-        }
+        await sendPasswordResetEmail(firebaseAuth, email.trim());
         return { error: null };
       } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Failed to send reset email. Please try again.';
+        const error = err as { code?: string; message?: string };
+        if (error.code === 'auth/user-not-found') {
+          return { error: 'No account found with this email address.' };
+        }
+        const msg = error.message ?? 'Failed to send reset email. Please try again.';
         return { error: msg };
       }
     },
@@ -344,13 +285,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const signOut = useCallback(async () => {
-    if (isSupabaseConfigured) {
-      try {
-        await supabase.auth.signOut();
-      } catch {
-        // ignore
-      }
-    }
     if (isFirebaseConfigured && firebaseAuth) {
       try {
         await firebaseSignOut(firebaseAuth);

@@ -28,7 +28,16 @@ import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { useCart } from '@/lib/cart-context';
 import { useAuth } from '@/lib/auth-context';
-import { supabase, isSupabaseConfigured, type Address, type Order } from '@/lib/supabase';
+import {
+  isFirebaseConfigured,
+  getAddresses,
+  insertAddress,
+  insertOrder,
+  insertStatusLog,
+  type Order,
+  type Address,
+} from '@/lib/supabase';
+import { sendOwnerNotifications } from '@/lib/notify';
 import { formatINR } from '@/lib/pricing';
 import { siteConfig, advancePercentage } from '@/lib/site-config';
 import { isValidWhatsAppPhone } from '@/lib/whatsapp';
@@ -130,32 +139,25 @@ export default function CheckoutPage() {
   // --- Load addresses when user is available ---
   useEffect(() => {
     if (!user) return;
-    if (!isSupabaseConfigured) {
+    if (!isFirebaseConfigured) {
       setUseNewAddress(true);
       return;
     }
-    // Fetch saved addresses from Supabase (RLS allows user to see own)
-    Promise.resolve(
-      supabase
-        .from('addresses')
-        .select('*')
-        .eq('user_id', user.uid)
-        .order('is_default', { ascending: false })
-        .then(({ data, error }) => {
-          if (error || !data) {
-            setUseNewAddress(true);
-            return;
-          }
-          if (data.length > 0) {
-            setAddresses(data as Address[]);
-            const def = data.find((a) => a.is_default) ?? data[0];
-            if (def) setSelectedAddress(def.id);
-            else setUseNewAddress(true);
-          } else {
-            setUseNewAddress(true);
-          }
-        })
-    ).catch(() => setUseNewAddress(true));
+    (async () => {
+      try {
+        const data = await getAddresses(user.uid);
+        if (data.length > 0) {
+          setAddresses(data);
+          const def = data.find((a) => a.is_default) ?? data[0];
+          if (def) setSelectedAddress(def.id);
+          else setUseNewAddress(true);
+        } else {
+          setUseNewAddress(true);
+        }
+      } catch {
+        setUseNewAddress(true);
+      }
+    })();
     // Pre-fill name/phone/email from profile
     if (profile) {
       setNewAddr((prev) => ({
@@ -300,58 +302,53 @@ export default function CheckoutPage() {
       const deliveryLabel =
         shippingMethods.find((m) => m.type === selectedCourier)?.label ?? selectedCourier;
 
-      const { data, error } = await supabase
-        .from('orders')
-        .insert({
-          order_number: orderNumber,
-          user_id: user.uid,
-          items: items,
-          subtotal: totals.subtotal,
-          discount: totals.discount,
-          coupon_code: coupon?.code ?? null,
-          shipping_cost: totals.shippingCost,
-          total: totals.total,
-          payment_method: paymentMethod,
-          payment_status: 'paid',
-          order_status: 'placed',
-          shipping_name: shippingName,
-          shipping_phone: shippingPhone,
-          shipping_address: shippingAddress,
-          shipping_pincode: shippingPin,
-          courier_type: selectedCourier,
-          delivery_type_label: deliveryLabel,
-          payment_screenshot_url: null,
-          customer_email: shippingEmail || emailInput || null,
-          notes: `Razorpay Payment ID: ${razorpayPaymentId}`,
-        })
-        .select()
-        .single();
+      const order = await insertOrder({
+        order_number: orderNumber,
+        user_id: user.uid,
+        items: items,
+        subtotal: totals.subtotal,
+        discount: totals.discount,
+        coupon_code: coupon?.code ?? null,
+        shipping_cost: totals.shippingCost,
+        total: totals.total,
+        payment_method: paymentMethod,
+        payment_status: 'paid',
+        order_status: 'placed',
+        shipping_name: shippingName,
+        shipping_phone: shippingPhone,
+        shipping_address: shippingAddress,
+        shipping_pincode: shippingPin,
+        courier_type: selectedCourier,
+        delivery_type_label: deliveryLabel,
+        payment_screenshot_url: null,
+        customer_email: shippingEmail || emailInput || null,
+        tracking_id: null,
+        notes: `Razorpay Payment ID: ${razorpayPaymentId}`,
+      });
 
-      if (error) throw error;
+      if (!order) throw new Error('Failed to save order');
 
-      const order = data as Order;
-
-      // Save address to Supabase for future use
+      // Save address to Firestore for future use
       if (useNewAddress) {
-        const newAddrRecord = {
-          id: crypto.randomUUID(),
-          user_id: user.uid,
-          label: 'Checkout',
-          name: newAddr.name,
-          phone: newAddr.phone,
-          email: newAddr.email || null,
-          line1: newAddr.line1,
-          line2: newAddr.line2 || null,
-          house_flat: null,
-          street_area: null,
-          landmark: null,
-          city: newAddr.city,
-          state: newAddr.state,
-          pincode: newAddr.pincode,
-          is_default: addresses.length === 0,
-        };
         try {
-          await supabase.from('addresses').insert(newAddrRecord);
+          await insertAddress({
+            user_id: user.uid,
+            label: 'Checkout',
+            name: newAddr.name,
+            phone: newAddr.phone,
+            alternate_phone: null,
+            email: newAddr.email || null,
+            line1: newAddr.line1,
+            line2: newAddr.line2 || null,
+            house_flat: null,
+            street_area: null,
+            landmark: null,
+            city: newAddr.city,
+            state: newAddr.state,
+            pincode: newAddr.pincode,
+            delivery_instructions: null,
+            is_default: addresses.length === 0,
+          });
         } catch {
           // Non-blocking
         }
@@ -359,7 +356,7 @@ export default function CheckoutPage() {
 
       // Insert status log
       try {
-        await supabase.from('order_status_log').insert({
+        await insertStatusLog({
           order_id: order.id,
           status: 'placed',
           note: 'Order placed successfully',
@@ -368,39 +365,9 @@ export default function CheckoutPage() {
         // Non-blocking
       }
 
-      // Send notifications (best-effort) via edge function
+      // Send owner notification (WhatsApp via wa.me — opens a new tab)
       try {
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-        const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-        await fetch(`${supabaseUrl}/functions/v1/notify-order`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${supabaseAnonKey}`,
-          },
-          body: JSON.stringify({
-            order: {
-              order_number: order.order_number,
-              created_at: order.created_at,
-              shipping_name: order.shipping_name,
-              shipping_phone: order.shipping_phone,
-              shipping_address: order.shipping_address,
-              shipping_pincode: order.shipping_pincode,
-              customer_email: order.customer_email,
-              items: order.items,
-              subtotal: order.subtotal,
-              discount: order.discount,
-              coupon_code: order.coupon_code,
-              shipping_cost: order.shipping_cost,
-              total: order.total,
-              payment_method: order.payment_method,
-              payment_status: order.payment_status,
-              notes: order.notes,
-            },
-            ownerEmail: 'contact@onlineprint4u.in',
-            ownerWhatsApp: '917858093865',
-          }),
-        });
+        await sendOwnerNotifications(order);
       } catch {
         // Non-blocking
       }

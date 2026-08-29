@@ -11,7 +11,7 @@ import {
 import { Header } from '@/components/header';
 import { Footer } from '@/components/footer';
 import { Button } from '@/components/ui/button';
-import { supabase, isSupabaseConfigured, type Order } from '@/lib/supabase';
+import { getOrder, isFirebaseConfigured, type Order } from '@/lib/supabase';
 import { formatINR } from '@/lib/pricing';
 import { openWhatsAppBill } from '@/lib/whatsapp';
 
@@ -24,21 +24,16 @@ export default function OrderSuccessPage() {
 
   useEffect(() => {
     if (!orderId) return;
-    if (!isSupabaseConfigured) {
+    if (!isFirebaseConfigured) {
       setLoading(false);
       return;
     }
-    Promise.resolve(
-      supabase
-        .from('orders')
-        .select('*')
-        .eq('id', orderId)
-        .maybeSingle()
-        .then(({ data, error }) => {
-          if (!error && data) setOrder(data as Order);
-          setLoading(false);
-        })
-    ).catch(() => setLoading(false));
+    getOrder(orderId)
+      .then((data) => {
+        if (data) setOrder(data);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
   }, [orderId]);
 
   // Automatically open WhatsApp with the bill pre-filled once the order is loaded

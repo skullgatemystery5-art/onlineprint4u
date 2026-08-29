@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import type { OrderItem, Coupon, PricingRate, ShippingRate } from './supabase';
-import { supabase } from './supabase';
+import { getActivePricingRates, getActiveShippingRates } from './supabase';
 import {
   calculateCartTotal,
   calculateItemPriceLocal,
@@ -59,20 +59,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [pincode, setPincode] = useState('');
 
   useEffect(() => {
-    supabase
-      .from('pricing_rates')
-      .select('*')
-      .eq('active', true)
-      .then(({ data }) => {
-        if (data) setRates(data as PricingRate[]);
-      });
-    supabase
-      .from('shipping_rates')
-      .select('*')
-      .eq('active', true)
-      .then(({ data }) => {
-        if (data) setShippingRates(data as ShippingRate[]);
-      });
+    getActivePricingRates().then((data) => {
+      if (data) setRates(data);
+    });
+    getActiveShippingRates().then((data) => {
+      if (data) setShippingRates(data);
+    });
   }, []);
 
   const addItem = useCallback((item: OrderItem, file?: File) => {

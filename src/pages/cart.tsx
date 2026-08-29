@@ -19,7 +19,7 @@ import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { useCart } from '@/lib/cart-context';
 import { useAuth } from '@/lib/auth-context';
-import { supabase, type Coupon } from '@/lib/supabase';
+import { getCouponByCode, type Coupon } from '@/lib/supabase';
 import { formatINR } from '@/lib/pricing';
 import { formatWeight } from '@/lib/shipping';
 import { cn } from '@/lib/utils';
@@ -59,21 +59,16 @@ export default function CartPage() {
     setApplying(true);
     setCouponError(null);
     try {
-      const { data, error } = await supabase
-        .from('coupons')
-        .select('*')
-        .eq('code', couponCode.trim().toUpperCase())
-        .eq('active', true)
-        .maybeSingle();
+      const data = await getCouponByCode(couponCode.trim().toUpperCase());
 
-      if (error || !data) {
+      if (!data) {
         setCoupon(null);
         setCouponError('Invalid coupon code.');
         toast.error('Invalid coupon code.');
         return;
       }
 
-      const c = data as Coupon;
+      const c = data;
       if (c.expires_at && new Date(c.expires_at) < new Date()) {
         setCoupon(null);
         setCouponError('This coupon has expired.');

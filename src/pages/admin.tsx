@@ -47,7 +47,28 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { supabase, isSupabaseConfigured, type Order, type Profile, type Coupon, type PricingRate, type ShippingRate } from '@/lib/supabase';
+import {
+  getAllOrders,
+  updateOrder,
+  insertStatusLog,
+  getAllProfiles,
+  getAllCoupons,
+  insertCoupon,
+  updateCoupon,
+  deleteCoupon as deleteCouponDb,
+  getAllPricingRates,
+  updatePricingRate,
+  getAllShippingRates,
+  updateShippingRate,
+  getSiteSettings,
+  upsertSiteSetting,
+  isFirebaseConfigured,
+  type Order,
+  type Profile,
+  type Coupon,
+  type PricingRate,
+  type ShippingRate,
+} from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { formatINR } from '@/lib/pricing';
 import { cn } from '@/lib/utils';
@@ -120,7 +141,7 @@ export default function AdminPage() {
   }, [user, profile, authLoading, navigate]);
 
   const loadAll = async () => {
-    if (!isSupabaseConfigured) {
+    if (!isFirebaseConfigured) {
       setDbError('Please configure valid database credentials to view data.');
       setLoading(false);
       return;
@@ -129,28 +150,23 @@ export default function AdminPage() {
     setDbError(null);
     const errors: string[] = [];
     try {
-      const [ordersRes, usersRes, couponsRes, ratesRes, shippingRes, settingsRes] = await Promise.all([
-        supabase.from('orders').select('*').order('created_at', { ascending: false }),
-        supabase.from('profiles').select('*').order('created_at', { ascending: false }),
-        supabase.from('coupons').select('*').order('created_at', { ascending: false }),
-        supabase.from('pricing_rates').select('*').order('category', { ascending: true }),
-        supabase.from('shipping_rates').select('*').order('base_rate', { ascending: true }),
-        supabase.from('site_settings').select('*'),
+      const [o, u, c, r, s, settings] = await Promise.all([
+        getAllOrders().catch(() => { errors.push('orders'); return [] as Order[]; }),
+        getAllProfiles().catch(() => { errors.push('profiles'); return [] as Profile[]; }),
+        getAllCoupons().catch(() => { errors.push('coupons'); return [] as Coupon[]; }),
+        getAllPricingRates().catch(() => { errors.push('pricing'); return [] as PricingRate[]; }),
+        getAllShippingRates().catch(() => { errors.push('shipping'); return [] as ShippingRate[]; }),
+        getSiteSettings().catch(() => { errors.push('settings'); return {} as Record<string, string>; }),
       ]);
-      if (ordersRes.error) errors.push('orders'); else if (ordersRes.data) setOrders(ordersRes.data as Order[]);
-      if (usersRes.error) errors.push('profiles'); else if (usersRes.data) setUsers(usersRes.data as Profile[]);
-      if (couponsRes.error) errors.push('coupons'); else if (couponsRes.data) setCoupons(couponsRes.data as Coupon[]);
-      if (ratesRes.error) errors.push('pricing'); else if (ratesRes.data) setRates(ratesRes.data as PricingRate[]);
-      if (shippingRes.error) errors.push('shipping'); else if (shippingRes.data) setShippingRates(shippingRes.data as ShippingRate[]);
-      if (settingsRes.error) errors.push('settings');
-      else if (settingsRes.data) {
-        const map: Record<string, string> = {};
-        (settingsRes.data as Array<{ key: string; value: string }>).forEach((s) => { map[s.key] = s.value; });
-        setSiteSettings(map);
-        setSettingsForm(map);
-      }
+      setOrders(o);
+      setUsers(u);
+      setCoupons(c);
+      setRates(r);
+      setShippingRates(s);
+      setSiteSettings(settings);
+      setSettingsForm(settings);
       if (errors.length > 0) {
-        setDbError(`Failed to load some data (${errors.join(', ')}). Check your database tables and columns. Use Retry to try again.`);
+        setDbError(`Failed to load some data (${errors.join(', ')}). Use Retry to try again.`);
       }
     } catch {
       setDbError('Failed to load data. Please check your database configuration and try again.');
@@ -163,16 +179,8 @@ export default function AdminPage() {
 
   const updateOrderStatus = async (orderId: string, status: string) => {
     try {
-      const { error } = await supabase
-        .from('orders')
-        .update({ order_status: status })
-        .eq('id', orderId);
-      if (error) throw error;
-      await supabase.from('order_status_log').insert({
-        order_id: orderId,
-        status,
-        note: `Status updated to ${status}`,
-      });
+      await updateOrder(orderId, { order_status: status });
+      await insertStatusLog({ order_id: orderId, status, note: `Status updated to ${status}` });
       setOrders((prev) =>
         prev.map((o) => (o.id === orderId ? { ...o, order_status: status as Order['order_status'] } : o))
       );
@@ -185,11 +193,7 @@ export default function AdminPage() {
   const updateTrackingId = async (orderId: string) => {
     const trackingId = trackingInputs[orderId] ?? '';
     try {
-      const { error } = await supabase
-        .from('orders')
-        .update({ tracking_id: trackingId })
-        .eq('id', orderId);
-      if (error) throw error;
+      await updateOrder(orderId, { tracking_id: trackingId });
       setOrders((prev) =>
         prev.map((o) => (o.id === orderId ? { ...o, tracking_id: trackingId } : o))
       );
@@ -201,11 +205,7 @@ export default function AdminPage() {
 
   const updateRate = async (rate: PricingRate) => {
     try {
-      const { error } = await supabase
-        .from('pricing_rates')
-        .update({ price: rate.price, label: rate.label, active: rate.active })
-        .eq('id', rate.id);
-      if (error) throw error;
+      await updatePricingRate(rate.id, { price: rate.price, label: rate.label, active: rate.active });
       setRates((prev) => prev.map((r) => (r.id === rate.id ? rate : r)));
       toast.success('Pricing rate updated.');
       setEditingRate(null);
@@ -216,17 +216,13 @@ export default function AdminPage() {
 
   const updateShippingRate = async (rate: ShippingRate) => {
     try {
-      const { error } = await supabase
-        .from('shipping_rates')
-        .update({
-          label: rate.label,
-          base_rate: rate.base_rate,
-          per_kg_rate: rate.per_kg_rate,
-          estimated_days: rate.estimated_days,
-          active: rate.active,
-        })
-        .eq('id', rate.id);
-      if (error) throw error;
+      await updateShippingRate(rate.id, {
+        label: rate.label,
+        base_rate: rate.base_rate,
+        per_kg_rate: rate.per_kg_rate,
+        estimated_days: rate.estimated_days,
+        active: rate.active,
+      });
       setShippingRates((prev) => prev.map((r) => (r.id === rate.id ? rate : r)));
       toast.success('Shipping rate updated.');
       setEditingShipping(null);
@@ -247,19 +243,17 @@ export default function AdminPage() {
         active: couponForm.active,
       };
       if (editingCoupon) {
-        const { error } = await supabase.from('coupons').update(payload).eq('id', editingCoupon.id);
-        if (error) throw error;
+        await updateCoupon(editingCoupon.id, payload);
         toast.success('Coupon updated.');
       } else {
-        const { error } = await supabase.from('coupons').insert(payload);
-        if (error) throw error;
+        await insertCoupon(payload);
         toast.success('Coupon created.');
       }
       setShowCouponForm(false);
       setEditingCoupon(null);
       setCouponForm({ code: '', description: '', discount_type: 'flat', value: 0, min_order: 0, max_discount: '', active: true });
-      const { data } = await supabase.from('coupons').select('*').order('created_at', { ascending: false });
-      if (data) setCoupons(data as Coupon[]);
+      const data = await getAllCoupons();
+      setCoupons(data);
     } catch {
       toast.error('Failed to save coupon.');
     }
@@ -267,8 +261,7 @@ export default function AdminPage() {
 
   const deleteCoupon = async (id: string) => {
     try {
-      const { error } = await supabase.from('coupons').delete().eq('id', id);
-      if (error) throw error;
+      await deleteCouponDb(id);
       setCoupons((prev) => prev.filter((c) => c.id !== id));
       toast.success('Coupon deleted.');
     } catch {
@@ -281,7 +274,7 @@ export default function AdminPage() {
     try {
       const updates = Object.entries(settingsForm).filter(([k, v]) => siteSettings[k] !== v);
       for (const [key, value] of updates) {
-        await supabase.from('site_settings').upsert({ key, value, description: '' }, { onConflict: 'key' });
+        await upsertSiteSetting(key, value);
       }
       setSiteSettings({ ...settingsForm });
       toast.success('Site settings saved.');

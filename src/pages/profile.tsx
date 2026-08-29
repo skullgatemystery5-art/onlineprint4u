@@ -17,7 +17,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
-import { supabase } from '@/lib/supabase';
+import { updateProfile } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 
 export default function ProfilePage() {
@@ -54,14 +54,10 @@ export default function ProfilePage() {
     }
     setSaving(true);
     try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          full_name: form.full_name,
-          phone: form.phone,
-        })
-        .eq('id', user.uid);
-      if (error) throw error;
+      await updateProfile(user.uid, {
+        full_name: form.full_name,
+        phone: form.phone,
+      });
       await refreshProfile();
       toast.success('Profile updated successfully!');
     } catch {
