@@ -4,7 +4,7 @@ import {
   upsertProfile,
   isFirebaseConfigured,
   type Profile,
-} from './supabase';
+} from './database';
 import type { User as FirebaseUser } from 'firebase/auth';
 import {
   signInWithPhoneNumber,
@@ -29,6 +29,7 @@ type AuthContextType = {
   profile: Profile | null;
   loading: boolean;
   isAdmin: boolean;
+  otpSending: boolean;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   sendPhoneOtp: (phone: string, recaptchaContainerId: string) => Promise<{ error: string | null }>;
@@ -44,6 +45,7 @@ const AuthContext = createContext<AuthContextType>({
   profile: null,
   loading: true,
   isAdmin: false,
+  otpSending: false,
   signOut: async () => {},
   refreshProfile: async () => {},
   sendPhoneOtp: async () => ({ error: 'Not initialized' }),
@@ -68,6 +70,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
+  const [otpSending, setOtpSending] = useState(false);
   const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
 
   const clearRecaptcha = useCallback(() => {
@@ -80,6 +83,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       recaptchaVerifierRef.current = null;
     }
+    // Also wipe any DOM remnants so Firebase can render a fresh widget
+    document.querySelectorAll('.g-recaptcha-bubble-arrow').forEach((el) => el.remove());
   }, []);
 
   const fetchProfile = useCallback(async (uid: string) => {
@@ -134,17 +139,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: 'Phone OTP is not configured. Please contact support.' };
       }
       const fullPhone = phone.startsWith('+') ? phone : `+91${phone}`;
+      setOtpSending(true);
       try {
+        // 1. Fully clear any existing verifier instance
         clearRecaptcha();
 
+        // 2. Wipe the container DOM so Firebase renders a fresh widget
         const container = document.getElementById(recaptchaContainerId);
         if (container) container.innerHTML = '';
 
+        // 3. Let the DOM mutation flush before creating a new verifier
+        await new Promise((r) => setTimeout(r, 50));
+
+        // 4. Create a fresh reCAPTCHA verifier
         const verifier = new RecaptchaVerifier(firebaseAuth, recaptchaContainerId, {
           size: 'invisible',
         });
         recaptchaVerifierRef.current = verifier;
 
+        // 5. Send the OTP
         const result = await signInWithPhoneNumber(firebaseAuth, fullPhone, verifier);
         setConfirmationResult(result);
         return { error: null };
@@ -152,6 +165,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const msg = err instanceof Error ? err.message : 'Failed to send OTP';
         clearRecaptcha();
         return { error: msg };
+      } finally {
+        setOtpSending(false);
       }
     },
     [clearRecaptcha]
@@ -305,6 +320,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         profile,
         loading,
         isAdmin: profile?.role === 'admin',
+        otpSending,
         signOut,
         refreshProfile,
         sendPhoneOtp,

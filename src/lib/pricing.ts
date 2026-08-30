@@ -1,4 +1,4 @@
-import type { OrderItem, PricingRate, ShippingRate, Coupon, PaperGsm } from './supabase';
+import type { OrderItem, PricingRate, ShippingRate, Coupon, PaperGsm } from './database';
 
 export const PAPER_GSM_OPTIONS: { value: PaperGsm; label: string }[] = [
   { value: '70', label: '70 GSM Economy' },

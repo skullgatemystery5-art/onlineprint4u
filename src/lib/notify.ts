@@ -1,4 +1,4 @@
-import type { Order } from './supabase';
+import type { Order } from './database';
 import { siteConfig } from './site-config';
 import { isValidWhatsAppPhone } from './whatsapp';
 

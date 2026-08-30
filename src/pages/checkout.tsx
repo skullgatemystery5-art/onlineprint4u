@@ -36,7 +36,7 @@ import {
   insertStatusLog,
   type Order,
   type Address,
-} from '@/lib/supabase';
+} from '@/lib/database';
 import { sendOwnerNotifications } from '@/lib/notify';
 import { formatINR } from '@/lib/pricing';
 import { siteConfig, advancePercentage } from '@/lib/site-config';

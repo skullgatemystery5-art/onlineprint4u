@@ -28,7 +28,7 @@ type Step = 'phone' | 'otp';
 const RECAPTCHA_CONTAINER_ID = 'firebase-recaptcha-container';
 
 export function HeaderAuthModal({ open, onClose, mode }: AuthModalProps) {
-  const { sendPhoneOtp, verifyPhoneOtp } = useAuth();
+  const { sendPhoneOtp, verifyPhoneOtp, otpSending } = useAuth();
   const [step, setStep] = useState<Step>('phone');
   const [loading, setLoading] = useState(false);
   const [phone, setPhone] = useState('');
@@ -174,10 +174,10 @@ export function HeaderAuthModal({ open, onClose, mode }: AuthModalProps) {
 
             <Button
               className="w-full gap-2"
-              disabled={!phoneValid || loading || (isSignup && !name.trim())}
+              disabled={!phoneValid || loading || otpSending || (isSignup && !name.trim())}
               onClick={handleSendOtp}
             >
-              {loading ? (
+              {loading || otpSending ? (
                 <><Loader2 className="h-4 w-4 animate-spin" /> Sending code...</>
               ) : (
                 <>Send Verification Code <ArrowRight className="h-4 w-4" /></>
@@ -238,7 +238,7 @@ export function HeaderAuthModal({ open, onClose, mode }: AuthModalProps) {
 
             <button
               onClick={handleResendOtp}
-              disabled={loading}
+              disabled={loading || otpSending}
               className="w-full text-center text-sm text-primary hover:underline disabled:opacity-50"
             >
               Didn&apos;t receive the code? Resend OTP

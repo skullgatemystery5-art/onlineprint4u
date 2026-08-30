@@ -19,7 +19,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { useCart } from '@/lib/cart-context';
-import { getCouponByCode } from '@/lib/supabase';
+import { getCouponByCode } from '@/lib/database';
 import { formatINR } from '@/lib/pricing';
 import { formatWeight, type CourierType } from '@/lib/shipping';
 import { ShippingPolicyModal } from '@/components/shipping-policy-modal';

@@ -36,7 +36,7 @@ import {
   updateAddress,
   isFirebaseConfigured,
   type Address,
-} from '@/lib/supabase';
+} from '@/lib/database';
 import { useAuth } from '@/lib/auth-context';
 import { useCart } from '@/lib/cart-context';
 import { formatINR } from '@/lib/pricing';

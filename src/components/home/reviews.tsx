@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Star, Quote } from 'lucide-react';
-import { getActiveReviews, isFirebaseConfigured, type Review } from '@/lib/supabase';
+import { getActiveReviews, isFirebaseConfigured, type Review } from '@/lib/database';
 import { cn } from '@/lib/utils';
 
 const fallbackReviews: Review[] = [

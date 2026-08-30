@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import type { OrderItem, Coupon, PricingRate, ShippingRate } from './supabase';
-import { getActivePricingRates, getActiveShippingRates } from './supabase';
+import type { OrderItem, Coupon, PricingRate, ShippingRate } from './database';
+import { getActivePricingRates, getActiveShippingRates } from './database';
 import {
   calculateCartTotal,
   calculateItemPriceLocal,
