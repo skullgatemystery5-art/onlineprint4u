@@ -36,7 +36,7 @@ import {
   isFirebaseConfigured,
   type Order,
   type Address,
-} from '@/lib/supabase';
+} from '@/lib/database';
 import { useAuth } from '@/lib/auth-context';
 import { formatINR } from '@/lib/pricing';
 import { cn } from '@/lib/utils';

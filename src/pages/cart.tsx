@@ -19,7 +19,7 @@ import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { useCart } from '@/lib/cart-context';
 import { useAuth } from '@/lib/auth-context';
-import { getCouponByCode, type Coupon } from '@/lib/supabase';
+import { getCouponByCode, type Coupon } from '@/lib/database';
 import { formatINR } from '@/lib/pricing';
 import { formatWeight } from '@/lib/shipping';
 import { cn } from '@/lib/utils';

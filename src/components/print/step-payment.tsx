@@ -24,7 +24,7 @@ import {
   insertAddress,
   type Order,
   type OrderItem,
-} from '@/lib/supabase';
+} from '@/lib/database';
 import { sendOwnerNotifications } from '@/lib/notify';
 import { formatINR } from '@/lib/pricing';
 import { siteConfig, advancePercentage } from '@/lib/site-config';

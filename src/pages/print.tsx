@@ -31,7 +31,7 @@ import {
   RATE_CARD,
   getPrintRateLocal,
 } from '@/lib/pricing';
-import type { OrderItem, PaperGsm } from '@/lib/supabase';
+import type { OrderItem, PaperGsm } from '@/lib/database';
 import { cn } from '@/lib/utils';
 import { FileUploader, type UploadedFile } from '@/components/print/file-uploader';
 import { StepAddress, type AddressData } from '@/components/print/step-address';

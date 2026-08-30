@@ -68,7 +68,7 @@ import {
   type Coupon,
   type PricingRate,
   type ShippingRate,
-} from '@/lib/supabase';
+} from '@/lib/database';
 import { useAuth } from '@/lib/auth-context';
 import { formatINR } from '@/lib/pricing';
 import { cn } from '@/lib/utils';
@@ -1162,7 +1162,7 @@ export default function AdminPage() {
                         <Label className="text-xs">Firebase Phone Auth Enabled (true/false)</Label>
                         <Input value={settingsForm.firebase_phone_auth_enabled ?? ''} onChange={(e) => setSettingsForm({ ...settingsForm, firebase_phone_auth_enabled: e.target.value })} placeholder="false" />
                       </div>
-                      <p className="mt-2 text-xs text-muted-foreground">Set to 'true' when Firebase Phone Auth is activated. Supabase Phone Auth is used by default.</p>
+                      <p className="mt-2 text-xs text-muted-foreground">Set to 'true' when Firebase Phone Auth is activated. Firebase Phone Auth is used by default.</p>
                     </div>
                   </div>
                 </CardContent>
