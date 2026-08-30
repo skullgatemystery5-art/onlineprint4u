@@ -27,7 +27,16 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { supabase, type Order, type Address } from '@/lib/supabase';
+import {
+  getOrdersByUser,
+  getAddresses,
+  insertAddress,
+  updateAddress,
+  deleteAddress,
+  isFirebaseConfigured,
+  type Order,
+  type Address,
+} from '@/lib/database';
 import { useAuth } from '@/lib/auth-context';
 import { formatINR } from '@/lib/pricing';
 import { cn } from '@/lib/utils';
@@ -68,24 +77,18 @@ export default function DashboardPage() {
       navigate('/login?redirect=/dashboard');
       return;
     }
-    Promise.all([
-      supabase
-        .from('orders')
-        .select('*')
-        .eq('user_id', user.uid)
-        .order('created_at', { ascending: false })
-        .then(({ data }) => data as Order[] | null),
-      supabase
-        .from('addresses')
-        .select('*')
-        .eq('user_id', user.uid)
-        .order('created_at', { ascending: false })
-        .then(({ data }) => data as Address[] | null),
-    ]).then(([o, a]) => {
-      if (o) setOrders(o);
-      if (a) setAddresses(a);
+    if (!isFirebaseConfigured) {
       setLoading(false);
-    });
+      return;
+    }
+    Promise.all([
+      getOrdersByUser(user.uid).catch(() => [] as Order[]),
+      getAddresses(user.uid).catch(() => [] as Address[]),
+    ]).then(([o, a]) => {
+      setOrders(o);
+      setAddresses(a);
+      setLoading(false);
+    }).catch(() => setLoading(false));
   }, [user, authLoading, navigate]);
 
   const handleSaveAddress = async () => {
@@ -96,38 +99,36 @@ export default function DashboardPage() {
     }
     try {
       if (editingAddr) {
-        const { error } = await supabase
-          .from('addresses')
-          .update({
-            label: addrForm.label,
-            name: addrForm.name,
-            phone: addrForm.phone,
-            line1: addrForm.line1,
-            line2: addrForm.line2,
-            city: addrForm.city,
-            state: addrForm.state,
-            pincode: addrForm.pincode,
-          })
-          .eq('id', editingAddr.id);
-        if (error) throw error;
+        await updateAddress(editingAddr.id, {
+          label: addrForm.label,
+          name: addrForm.name,
+          phone: addrForm.phone,
+          line1: addrForm.line1,
+          line2: addrForm.line2,
+          city: addrForm.city,
+          state: addrForm.state,
+          pincode: addrForm.pincode,
+        });
         toast.success('Address updated.');
       } else {
-        const { error } = await supabase.from('addresses').insert({
+        await insertAddress({
           user_id: user.uid,
           ...addrForm,
+          alternate_phone: null,
+          email: null,
+          house_flat: null,
+          street_area: null,
+          landmark: null,
+          delivery_instructions: null,
+          is_default: false,
         });
-        if (error) throw error;
         toast.success('Address saved.');
       }
       setShowAddrForm(false);
       setEditingAddr(null);
       setAddrForm({ label: 'Home', name: '', phone: '', line1: '', line2: '', city: '', state: '', pincode: '' });
-      const { data } = await supabase
-        .from('addresses')
-        .select('*')
-        .eq('user_id', user.uid)
-        .order('created_at', { ascending: false });
-      if (data) setAddresses(data as Address[]);
+      const data = await getAddresses(user.uid);
+      setAddresses(data);
     } catch {
       toast.error('Failed to save address.');
     }
@@ -135,8 +136,7 @@ export default function DashboardPage() {
 
   const handleDeleteAddress = async (id: string) => {
     try {
-      const { error } = await supabase.from('addresses').delete().eq('id', id);
-      if (error) throw error;
+      await deleteAddress(id);
       setAddresses((prev) => prev.filter((a) => a.id !== id));
       toast.success('Address deleted.');
     } catch {

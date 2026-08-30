@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import type { OrderItem, Coupon, PricingRate, ShippingRate } from './supabase';
-import { supabase } from './supabase';
+import type { OrderItem, Coupon, PricingRate, ShippingRate } from './database';
+import { getActivePricingRates, getActiveShippingRates } from './database';
 import {
   calculateCartTotal,
   calculateItemPriceLocal,
@@ -17,7 +17,8 @@ import {
 
 type CartContextType = {
   items: OrderItem[];
-  addItem: (item: OrderItem) => void;
+  fileObjects: Record<string, File>;
+  addItem: (item: OrderItem, file?: File) => void;
   removeItem: (id: string) => void;
   updateItem: (id: string, updates: Partial<OrderItem>) => void;
   updateCopies: (id: string, copies: number) => void;
@@ -48,6 +49,7 @@ const CartContext = createContext<CartContextType>(null as unknown as CartContex
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<OrderItem[]>([]);
+  const [fileObjects, setFileObjects] = useState<Record<string, File>>({});
   const [coupon, setCoupon] = useState<Coupon | null>(null);
   const [couponCode, setCouponCode] = useState('');
   const [couponError, setCouponError] = useState<string | null>(null);
@@ -57,28 +59,28 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [pincode, setPincode] = useState('');
 
   useEffect(() => {
-    supabase
-      .from('pricing_rates')
-      .select('*')
-      .eq('active', true)
-      .then(({ data }) => {
-        if (data) setRates(data as PricingRate[]);
-      });
-    supabase
-      .from('shipping_rates')
-      .select('*')
-      .eq('active', true)
-      .then(({ data }) => {
-        if (data) setShippingRates(data as ShippingRate[]);
-      });
+    getActivePricingRates().then((data) => {
+      if (data) setRates(data);
+    });
+    getActiveShippingRates().then((data) => {
+      if (data) setShippingRates(data);
+    });
   }, []);
 
-  const addItem = useCallback((item: OrderItem) => {
+  const addItem = useCallback((item: OrderItem, file?: File) => {
     setItems((prev) => [...prev, item]);
+    if (file) {
+      setFileObjects((prev) => ({ ...prev, [item.id]: file }));
+    }
   }, []);
 
   const removeItem = useCallback((id: string) => {
     setItems((prev) => prev.filter((i) => i.id !== id));
+    setFileObjects((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
   }, []);
 
   const updateItem = useCallback(
@@ -109,6 +111,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const clearCart = useCallback(() => {
     setItems([]);
+    setFileObjects({});
     setCoupon(null);
     setCouponCode('');
     setPincode('');
@@ -137,6 +140,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     <CartContext.Provider
       value={{
         items,
+        fileObjects,
         addItem,
         removeItem,
         updateItem,

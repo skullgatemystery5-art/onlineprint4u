@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
-import { supabase } from '@/lib/supabase';
+import { insertContactMessage } from '@/lib/database';
 
 export function Contact() {
   const [submitting, setSubmitting] = useState(false);
@@ -19,10 +19,9 @@ export function Contact() {
     }
     setSubmitting(true);
     try {
-      const { error } = await supabase.from('contact_messages').insert({
+      await insertContactMessage({
         name: form.name, email: form.email, phone: form.phone, subject: form.subject, message: form.message,
       });
-      if (error) throw error;
       toast.success('Message sent! We will get back to you shortly.');
       setForm({ name: '', email: '', phone: '', subject: '', message: '' });
     } catch {

@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth-context';
-import { supabase } from '@/lib/supabase';
+import { upsertProfile } from '@/lib/database';
 import { cn } from '@/lib/utils';
 
 type SignupMode = 'email' | 'phone';
@@ -17,7 +17,7 @@ const RECAPTCHA_CONTAINER_ID = 'signup-recaptcha-container';
 
 export default function SignupPage() {
   const navigate = useNavigate();
-  const { user: authUser, sendPhoneOtp, verifyPhoneOtp, sendEmailOtp, verifyEmailOtp } = useAuth();
+  const { user: authUser, sendPhoneOtp, verifyPhoneOtp, sendEmailOtp, verifyEmailOtp, otpSending } = useAuth();
   const [mode, setMode] = useState<SignupMode>('phone');
   const [step, setStep] = useState<SignupStep>('details');
 
@@ -82,13 +82,13 @@ export default function SignupPage() {
     // Update profile with the name they entered
     try {
       if (authUser) {
-        await supabase.from('profiles').upsert({
+        await upsertProfile({
           id: authUser.uid,
           email: authUser.email ?? email,
           full_name: name,
           phone: authUser.phoneNumber ?? `+91${phone}`,
           role: 'user',
-        }, { onConflict: 'id' });
+        });
       }
     } catch {
       // Non-blocking — profile will be created on next login
@@ -188,8 +188,8 @@ export default function SignupPage() {
               </div>
             </div>
           )}
-          <Button type="submit" className="w-full gap-2" disabled={loading || (mode === 'phone' && phone.length !== 10)}>
-            {loading ? (
+          <Button type="submit" className="w-full gap-2" disabled={loading || otpSending || (mode === 'phone' && phone.length !== 10)}>
+            {loading || otpSending ? (
               <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Sending code...</>
             ) : (
               <>Send Verification Code <ArrowRight className="h-4 w-4" /></>

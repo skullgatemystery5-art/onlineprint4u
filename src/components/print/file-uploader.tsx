@@ -10,6 +10,7 @@ export type UploadedFile = {
   type: string;
   pages: number;
   previewUrl?: string;
+  file: File;
 };
 
 const acceptedTypes = ['.pdf', '.docx', '.pptx', '.jpg', '.jpeg', '.png'];
@@ -68,6 +69,7 @@ export function FileUploader({
             type: ext,
             pages,
             previewUrl,
+            file: f,
           };
         })
       );

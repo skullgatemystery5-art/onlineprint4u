@@ -19,7 +19,7 @@ type Step = 'details' | 'otp';
 const RECAPTCHA_CONTAINER_ID = 'otp-address-recaptcha-container';
 
 export function OtpAddressModal({ open, onClose, onSuccess, title, description }: OtpAddressModalProps) {
-  const { sendPhoneOtp, verifyPhoneOtp } = useAuth();
+  const { sendPhoneOtp, verifyPhoneOtp, otpSending } = useAuth();
   const [step, setStep] = useState<Step>('details');
   const [loading, setLoading] = useState(false);
 
@@ -164,10 +164,10 @@ export function OtpAddressModal({ open, onClose, onSuccess, title, description }
 
             <Button
               className="mt-6 w-full gap-2"
-              disabled={!detailsValid || loading}
+              disabled={!detailsValid || loading || otpSending}
               onClick={proceedToOtp}
             >
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Phone className="h-4 w-4" />}
+              {loading || otpSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Phone className="h-4 w-4" />}
               Continue
               <ArrowRight className="h-4 w-4" />
             </Button>

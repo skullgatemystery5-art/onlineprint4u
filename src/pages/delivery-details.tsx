@@ -30,7 +30,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { supabase, type Address } from '@/lib/supabase';
+import {
+  getAddresses,
+  insertAddress,
+  updateAddress,
+  isFirebaseConfigured,
+  type Address,
+} from '@/lib/database';
 import { useAuth } from '@/lib/auth-context';
 import { useCart } from '@/lib/cart-context';
 import { formatINR } from '@/lib/pricing';
@@ -88,18 +94,23 @@ export default function DeliveryDetailsPage() {
 
   const loadAddresses = async () => {
     if (!user) return;
+    if (!isFirebaseConfigured) {
+      setShowForm(true);
+      setLoadingAddresses(false);
+      return;
+    }
     setLoadingAddresses(true);
-    const { data } = await supabase
-      .from('addresses')
-      .select('*')
-      .eq('user_id', user.uid)
-      .order('created_at', { ascending: false });
-    if (data && data.length > 0) {
-      setAddresses(data as Address[]);
-      const def = data.find((a) => a.is_default) ?? data[0];
-      setSelectedAddressId(def.id);
-      setPincode(def.pincode);
-    } else {
+    try {
+      const data = await getAddresses(user.uid);
+      if (data.length > 0) {
+        setAddresses(data);
+        const def = data.find((a) => a.is_default) ?? data[0];
+        setSelectedAddressId(def.id);
+        setPincode(def.pincode);
+      } else {
+        setShowForm(true);
+      }
+    } catch {
       setShowForm(true);
     }
     setLoadingAddresses(false);
@@ -151,22 +162,21 @@ export default function DeliveryDetailsPage() {
       };
 
       if (editingId) {
-        const { error } = await supabase.from('addresses').update(payload).eq('id', editingId);
-        if (error) throw error;
+        await updateAddress(editingId, payload);
         toast.success('Address updated.');
       } else {
-        const { error } = await supabase.from('addresses').insert(payload);
-        if (error) throw error;
+        await insertAddress(payload);
         toast.success('Address saved.');
       }
 
       // If default, unset others
       if (form.is_default) {
-        await supabase
-          .from('addresses')
-          .update({ is_default: false })
-          .neq('id', editingId || '00000000-0000-0000-0000-000000000000')
-          .eq('user_id', user.uid);
+        const all = await getAddresses(user.uid);
+        await Promise.all(
+          all
+            .filter((a) => a.id !== editingId && a.is_default)
+            .map((a) => updateAddress(a.id, { is_default: false }))
+        );
       }
 
       setShowForm(false);

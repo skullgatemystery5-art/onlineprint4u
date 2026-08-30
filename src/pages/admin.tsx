@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -23,6 +23,13 @@ import {
   Settings,
   Save,
   Loader2,
+  Download,
+  ChevronDown,
+  ChevronRight,
+  MapPin,
+  Phone,
+  Mail,
+  CreditCard,
 } from 'lucide-react';
 import { Header } from '@/components/header';
 import { Footer } from '@/components/footer';
@@ -40,7 +47,28 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { supabase, type Order, type Profile, type Coupon, type PricingRate, type ShippingRate } from '@/lib/supabase';
+import {
+  getAllOrders,
+  updateOrder,
+  insertStatusLog,
+  getAllProfiles,
+  getAllCoupons,
+  insertCoupon,
+  updateCoupon,
+  deleteCoupon as deleteCouponDb,
+  getAllPricingRates,
+  updatePricingRate,
+  getAllShippingRates,
+  updateShippingRate,
+  getSiteSettings,
+  upsertSiteSetting,
+  isFirebaseConfigured,
+  type Order,
+  type Profile,
+  type Coupon,
+  type PricingRate,
+  type ShippingRate,
+} from '@/lib/database';
 import { useAuth } from '@/lib/auth-context';
 import { formatINR } from '@/lib/pricing';
 import { cn } from '@/lib/utils';
@@ -52,12 +80,14 @@ export default function AdminPage() {
   const { user, profile, loading: authLoading } = useAuth();
   const [authorized, setAuthorized] = useState(false);
   const [checking, setChecking] = useState(true);
+  const [checkError, setCheckError] = useState(false);
   const [orders, setOrders] = useState<Order[]>([]);
   const [users, setUsers] = useState<Profile[]>([]);
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [rates, setRates] = useState<PricingRate[]>([]);
   const [shippingRates, setShippingRates] = useState<ShippingRate[]>([]);
   const [loading, setLoading] = useState(true);
+  const [dbError, setDbError] = useState<string | null>(null);
 
   // Edit states
   const [editingRate, setEditingRate] = useState<PricingRate | null>(null);
@@ -77,15 +107,32 @@ export default function AdminPage() {
     active: true,
   });
 
+  // Safety timeout: if auth check takes too long, show retry instead of freezing
+  const checkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!checking && !authLoading) return;
+    checkTimerRef.current = setTimeout(() => {
+      setChecking(false);
+      setCheckError(true);
+    }, 10000);
+    return () => {
+      if (checkTimerRef.current) clearTimeout(checkTimerRef.current);
+    };
+  }, [checking, authLoading]);
+
   useEffect(() => {
     if (authLoading) return;
+    if (checkTimerRef.current) clearTimeout(checkTimerRef.current);
     if (!user) {
-      navigate('/login?redirect=/admin');
+      navigate('/admin-login');
       return;
     }
-    if (profile?.role === 'admin') {
+    const ADMIN_EMAIL = 'skullgate.mystery5@gmail.com';
+    const isAdmin = profile?.role === 'admin' || user.email === ADMIN_EMAIL;
+    if (isAdmin) {
       setAuthorized(true);
       setChecking(false);
+      setCheckError(false);
       loadAll();
     } else {
       navigate('/dashboard');
@@ -94,41 +141,46 @@ export default function AdminPage() {
   }, [user, profile, authLoading, navigate]);
 
   const loadAll = async () => {
+    if (!isFirebaseConfigured) {
+      setDbError('Please configure valid database credentials to view data.');
+      setLoading(false);
+      return;
+    }
     setLoading(true);
-    const [ordersRes, usersRes, couponsRes, ratesRes, shippingRes, settingsRes] = await Promise.all([
-      supabase.from('orders').select('*').order('created_at', { ascending: false }),
-      supabase.from('profiles').select('*').order('created_at', { ascending: false }),
-      supabase.from('coupons').select('*').order('created_at', { ascending: false }),
-      supabase.from('pricing_rates').select('*').order('category', { ascending: true }),
-      supabase.from('shipping_rates').select('*').order('base_rate', { ascending: true }),
-      supabase.from('site_settings').select('*'),
-    ]);
-    if (ordersRes.data) setOrders(ordersRes.data as Order[]);
-    if (usersRes.data) setUsers(usersRes.data as Profile[]);
-    if (couponsRes.data) setCoupons(couponsRes.data as Coupon[]);
-    if (ratesRes.data) setRates(ratesRes.data as PricingRate[]);
-    if (shippingRes.data) setShippingRates(shippingRes.data as ShippingRate[]);
-    if (settingsRes.data) {
-      const map: Record<string, string> = {};
-      (settingsRes.data as Array<{ key: string; value: string }>).forEach((s) => { map[s.key] = s.value; });
-      setSiteSettings(map);
-      setSettingsForm(map);
+    setDbError(null);
+    const errors: string[] = [];
+    try {
+      const [o, u, c, r, s, settings] = await Promise.all([
+        getAllOrders().catch(() => { errors.push('orders'); return [] as Order[]; }),
+        getAllProfiles().catch(() => { errors.push('profiles'); return [] as Profile[]; }),
+        getAllCoupons().catch(() => { errors.push('coupons'); return [] as Coupon[]; }),
+        getAllPricingRates().catch(() => { errors.push('pricing'); return [] as PricingRate[]; }),
+        getAllShippingRates().catch(() => { errors.push('shipping'); return [] as ShippingRate[]; }),
+        getSiteSettings().catch(() => { errors.push('settings'); return {} as Record<string, string>; }),
+      ]);
+      setOrders(o);
+      setUsers(u);
+      setCoupons(c);
+      setRates(r);
+      setShippingRates(s);
+      setSiteSettings(settings);
+      setSettingsForm(settings);
+      if (errors.length > 0) {
+        setDbError(`Failed to load some data (${errors.join(', ')}). Use Retry to try again.`);
+      }
+    } catch {
+      setDbError('Failed to load data. Please check your database configuration and try again.');
     }
     setLoading(false);
   };
 
+  const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
+  const [trackingInputs, setTrackingInputs] = useState<Record<string, string>>({});
+
   const updateOrderStatus = async (orderId: string, status: string) => {
     try {
-      const { error } = await supabase
-        .from('orders')
-        .update({ order_status: status })
-        .eq('id', orderId);
-      if (error) throw error;
-      await supabase.from('order_status_log').insert({
-        order_id: orderId,
-        status,
-        note: `Status updated to ${status}`,
-      });
+      await updateOrder(orderId, { order_status: status });
+      await insertStatusLog({ order_id: orderId, status, note: `Status updated to ${status}` });
       setOrders((prev) =>
         prev.map((o) => (o.id === orderId ? { ...o, order_status: status as Order['order_status'] } : o))
       );
@@ -138,13 +190,22 @@ export default function AdminPage() {
     }
   };
 
+  const updateTrackingId = async (orderId: string) => {
+    const trackingId = trackingInputs[orderId] ?? '';
+    try {
+      await updateOrder(orderId, { tracking_id: trackingId });
+      setOrders((prev) =>
+        prev.map((o) => (o.id === orderId ? { ...o, tracking_id: trackingId } : o))
+      );
+      toast.success('Tracking ID updated.');
+    } catch {
+      toast.error('Failed to update tracking ID.');
+    }
+  };
+
   const updateRate = async (rate: PricingRate) => {
     try {
-      const { error } = await supabase
-        .from('pricing_rates')
-        .update({ price: rate.price, label: rate.label, active: rate.active })
-        .eq('id', rate.id);
-      if (error) throw error;
+      await updatePricingRate(rate.id, { price: rate.price, label: rate.label, active: rate.active });
       setRates((prev) => prev.map((r) => (r.id === rate.id ? rate : r)));
       toast.success('Pricing rate updated.');
       setEditingRate(null);
@@ -155,17 +216,13 @@ export default function AdminPage() {
 
   const updateShippingRate = async (rate: ShippingRate) => {
     try {
-      const { error } = await supabase
-        .from('shipping_rates')
-        .update({
-          label: rate.label,
-          base_rate: rate.base_rate,
-          per_kg_rate: rate.per_kg_rate,
-          estimated_days: rate.estimated_days,
-          active: rate.active,
-        })
-        .eq('id', rate.id);
-      if (error) throw error;
+      await updateShippingRate(rate.id, {
+        label: rate.label,
+        base_rate: rate.base_rate,
+        per_kg_rate: rate.per_kg_rate,
+        estimated_days: rate.estimated_days,
+        active: rate.active,
+      });
       setShippingRates((prev) => prev.map((r) => (r.id === rate.id ? rate : r)));
       toast.success('Shipping rate updated.');
       setEditingShipping(null);
@@ -186,19 +243,17 @@ export default function AdminPage() {
         active: couponForm.active,
       };
       if (editingCoupon) {
-        const { error } = await supabase.from('coupons').update(payload).eq('id', editingCoupon.id);
-        if (error) throw error;
+        await updateCoupon(editingCoupon.id, payload);
         toast.success('Coupon updated.');
       } else {
-        const { error } = await supabase.from('coupons').insert(payload);
-        if (error) throw error;
+        await insertCoupon(payload);
         toast.success('Coupon created.');
       }
       setShowCouponForm(false);
       setEditingCoupon(null);
       setCouponForm({ code: '', description: '', discount_type: 'flat', value: 0, min_order: 0, max_discount: '', active: true });
-      const { data } = await supabase.from('coupons').select('*').order('created_at', { ascending: false });
-      if (data) setCoupons(data as Coupon[]);
+      const data = await getAllCoupons();
+      setCoupons(data);
     } catch {
       toast.error('Failed to save coupon.');
     }
@@ -206,8 +261,7 @@ export default function AdminPage() {
 
   const deleteCoupon = async (id: string) => {
     try {
-      const { error } = await supabase.from('coupons').delete().eq('id', id);
-      if (error) throw error;
+      await deleteCouponDb(id);
       setCoupons((prev) => prev.filter((c) => c.id !== id));
       toast.success('Coupon deleted.');
     } catch {
@@ -220,7 +274,7 @@ export default function AdminPage() {
     try {
       const updates = Object.entries(settingsForm).filter(([k, v]) => siteSettings[k] !== v);
       for (const [key, value] of updates) {
-        await supabase.from('site_settings').upsert({ key, value, description: '' }, { onConflict: 'key' });
+        await upsertSiteSetting(key, value);
       }
       setSiteSettings({ ...settingsForm });
       toast.success('Site settings saved.');
@@ -231,12 +285,38 @@ export default function AdminPage() {
     }
   };
 
+  if (checkError) {
+    return (
+      <>
+        <Header />
+        <main className="flex min-h-screen flex-col items-center justify-center gap-4 px-4">
+          <XCircle className="h-16 w-16 text-destructive" />
+          <h1 className="font-display text-2xl font-bold">Connection Timeout</h1>
+          <p className="text-muted-foreground text-center max-w-md">
+            The access check is taking too long. This usually means the database connection is failing.
+          </p>
+          <div className="flex gap-3">
+            <Button onClick={() => { setCheckError(false); setChecking(true); setAuthorized(false); }}>
+              Retry
+            </Button>
+            <Button variant="outline" onClick={() => navigate('/admin-login')}>
+              Go to Login
+            </Button>
+          </div>
+        </main>
+      </>
+    );
+  }
+
   if (checking || authLoading) {
     return (
       <>
         <Header />
         <main className="flex min-h-screen items-center justify-center">
-          <div className="text-muted-foreground">Checking access...</div>
+          <div className="flex flex-col items-center gap-3">
+            <Loader2 className="h-6 w-6 animate-spin text-primary" />
+            <div className="text-muted-foreground">Checking access...</div>
+          </div>
         </main>
       </>
     );
@@ -272,7 +352,9 @@ export default function AdminPage() {
           <div className="mb-8 flex items-center gap-4">
             <div>
               <h1 className="font-display text-3xl font-bold">Admin Dashboard</h1>
-              <p className="mt-1 text-muted-foreground">Manage Online Print 4U operations</p>
+              <p className="mt-1 text-muted-foreground">
+                Welcome, Admin — Manage Online Print 4U operations
+              </p>
             </div>
           </div>
 
@@ -350,57 +432,234 @@ export default function AdminPage() {
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="border-b border-border text-left">
+                            <th className="pb-3 pr-4 font-semibold"></th>
                             <th className="pb-3 pr-4 font-semibold">Order #</th>
+                            <th className="pb-3 pr-4 font-semibold">Date &amp; Time</th>
                             <th className="pb-3 pr-4 font-semibold">Customer</th>
-                            <th className="pb-3 pr-4 font-semibold">Items</th>
+                            <th className="pb-3 pr-4 font-semibold">Delivery Address</th>
+                            <th className="pb-3 pr-4 font-semibold">Printing Requirements</th>
                             <th className="pb-3 pr-4 font-semibold">Total</th>
                             <th className="pb-3 pr-4 font-semibold">Payment</th>
                             <th className="pb-3 pr-4 font-semibold">Status</th>
-                            <th className="pb-3 font-semibold">Update</th>
+                            <th className="pb-3 pr-4 font-semibold">Tracking ID</th>
+                            <th className="pb-3 font-semibold">File Link</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {orders.map((order) => (
-                            <tr key={order.id} className="border-b border-border/50">
-                              <td className="py-3 pr-4">
-                                <p className="font-mono text-xs font-semibold">{order.order_number}</p>
-                                <p className="text-xs text-muted-foreground">
-                                  {new Date(order.created_at).toLocaleDateString('en-IN')}
-                                </p>
-                              </td>
-                              <td className="py-3 pr-4">
-                                <p className="text-xs font-medium">{order.shipping_name}</p>
-                                <p className="text-xs text-muted-foreground">{order.shipping_phone}</p>
-                              </td>
-                              <td className="py-3 pr-4 text-xs">{order.items.length} items</td>
-                              <td className="py-3 pr-4 font-semibold">{formatINR(order.total)}</td>
-                              <td className="py-3 pr-4">
-                                <Badge variant={order.payment_status === 'paid' ? 'default' : 'secondary'}>
-                                  {order.payment_status}
-                                </Badge>
-                              </td>
-                              <td className="py-3 pr-4">
-                                <Badge variant="outline">{order.order_status}</Badge>
-                              </td>
-                              <td className="py-3">
-                                <Select
-                                  value={order.order_status}
-                                  onValueChange={(v) => updateOrderStatus(order.id, v)}
-                                >
-                                  <SelectTrigger className="h-8 w-36 text-xs">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {statusOptions.map((s) => (
-                                      <SelectItem key={s} value={s} className="capitalize text-xs">
-                                        {s}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </td>
-                            </tr>
-                          ))}
+                          {orders.map((order) => {
+                            const isExpanded = expandedOrder === order.id;
+                            const orderItems = order.items as Array<{
+                              fileName: string;
+                              fileType: string;
+                              pages: number;
+                              copies: number;
+                              printType: string;
+                              side: string;
+                              paperGsm: string;
+                              binding: string;
+                              lamination: string;
+                              premiumPhoto: boolean;
+                              notes: string;
+                              price: number;
+                              fileUrl?: string;
+                            }>;
+                            return (
+                              <>
+                                <tr key={order.id} className="border-b border-border/50 hover:bg-muted/20">
+                                  <td className="py-3 pr-2">
+                                    <button
+                                      onClick={() => setExpandedOrder(isExpanded ? null : order.id)}
+                                      className="rounded p-1 hover:bg-muted"
+                                    >
+                                      {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                                    </button>
+                                  </td>
+                                  <td className="py-3 pr-4">
+                                    <p className="font-mono text-xs font-semibold">{order.order_number}</p>
+                                  </td>
+                                  <td className="py-3 pr-4">
+                                    <p className="text-xs font-medium">
+                                      {new Date(order.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                    </p>
+                                    <p className="text-xs text-muted-foreground">
+                                      {new Date(order.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                                    </p>
+                                  </td>
+                                  <td className="py-3 pr-4">
+                                    <p className="text-xs font-medium">{order.shipping_name}</p>
+                                    <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                                      <Phone className="h-3 w-3" /> {order.shipping_phone}
+                                    </p>
+                                    {order.customer_email && (
+                                      <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                                        <Mail className="h-3 w-3" /> {order.customer_email}
+                                      </p>
+                                    )}
+                                  </td>
+                                  <td className="py-3 pr-4 max-w-[200px]">
+                                    <p className="flex items-start gap-1 text-xs text-muted-foreground">
+                                      <MapPin className="mt-0.5 h-3 w-3 shrink-0" />
+                                      <span>{order.shipping_address} — {order.shipping_pincode}</span>
+                                    </p>
+                                  </td>
+                                  <td className="py-3 pr-4 max-w-[220px]">
+                                    <p className="text-xs text-muted-foreground">{orderItems.length} item(s)</p>
+                                    <div className="mt-1 flex flex-wrap gap-1">
+                                      {orderItems.slice(0, 2).map((item, i) => (
+                                        <span key={i} className="rounded-md bg-muted px-2 py-0.5 text-xs">
+                                          {item.fileName} ({item.pages}p × {item.copies})
+                                        </span>
+                                      ))}
+                                      {orderItems.length > 2 && (
+                                        <span className="text-xs text-primary">+{orderItems.length - 2} more</span>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="py-3 pr-4 font-semibold">{formatINR(order.total)}</td>
+                                  <td className="py-3 pr-4">
+                                    <div className="flex flex-col gap-1">
+                                      <Badge variant={order.payment_status === 'paid' ? 'default' : 'secondary'}>
+                                        {order.payment_status}
+                                      </Badge>
+                                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                                        <CreditCard className="h-3 w-3" /> {order.payment_method}
+                                      </span>
+                                    </div>
+                                  </td>
+                                  <td className="py-3 pr-4">
+                                    <Badge variant="outline">{order.order_status}</Badge>
+                                    <Select
+                                      value={order.order_status}
+                                      onValueChange={(v) => updateOrderStatus(order.id, v)}
+                                    >
+                                      <SelectTrigger className="mt-1 h-8 w-36 text-xs">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {statusOptions.map((s) => (
+                                          <SelectItem key={s} value={s} className="capitalize text-xs">
+                                            {s}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </td>
+                                  <td className="py-3 pr-4">
+                                    {order.tracking_id && !isExpanded && (
+                                      <p className="text-xs font-mono">{order.tracking_id}</p>
+                                    )}
+                                    <Input
+                                      type="text"
+                                      value={trackingInputs[order.id] ?? order.tracking_id ?? ''}
+                                      onChange={(e) => setTrackingInputs({ ...trackingInputs, [order.id]: e.target.value })}
+                                      placeholder="Enter tracking ID"
+                                      className="h-8 w-32 text-xs"
+                                    />
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="mt-1 h-7 text-xs"
+                                      onClick={() => updateTrackingId(order.id)}
+                                    >
+                                      <Save className="h-3 w-3" /> Save
+                                    </Button>
+                                  </td>
+                                  <td className="py-3 pr-4">
+                                    {orderItems.some((item) => item.fileUrl) ? (
+                                      <div className="flex flex-col gap-1">
+                                        {orderItems.filter((item) => item.fileUrl).slice(0, 1).map((item, i) => (
+                                          <a
+                                            key={i}
+                                            href={item.fileUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="flex items-center gap-1 text-xs text-primary hover:underline"
+                                          >
+                                            <Download className="h-3 w-3" /> Download
+                                          </a>
+                                        ))}
+                                        {orderItems.filter((item) => item.fileUrl).length > 1 && (
+                                          <span className="text-xs text-muted-foreground">
+                                            +{orderItems.filter((item) => item.fileUrl).length - 1} more files
+                                          </span>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <span className="text-xs text-muted-foreground">No file</span>
+                                    )}
+                                  </td>
+                                </tr>
+                                {isExpanded && (
+                                  <tr className="bg-muted/10">
+                                    <td colSpan={11} className="px-8 py-4">
+                                      <div className="space-y-4">
+                                        <div>
+                                          <h4 className="mb-2 font-display text-sm font-semibold">Full Printing Requirements</h4>
+                                          <div className="space-y-2">
+                                            {orderItems.map((item, i) => {
+                                              const typeLabel = item.printType === 'bw' ? 'B&W' : 'Color';
+                                              const sideLabel = item.side === 'double' ? 'Double' : 'Single';
+                                              const bindingLabel = item.binding !== 'none' ? ` | ${item.binding}` : '';
+                                              const laminationLabel = item.lamination !== 'none' ? ` | ${item.lamination}` : '';
+                                              return (
+                                                <div key={i} className="rounded-lg border border-border p-3">
+                                                  <div className="flex items-start justify-between gap-2">
+                                                    <div className="flex-1">
+                                                      <p className="text-sm font-medium">{item.fileName}</p>
+                                                      <p className="text-xs text-muted-foreground">
+                                                        {item.pages} pages × {item.copies} copies | {typeLabel} {sideLabel} | {item.paperGsm}GSM{bindingLabel}{laminationLabel}
+                                                        {item.premiumPhoto ? ' | Premium Photo' : ''}
+                                                      </p>
+                                                      {item.notes && <p className="mt-1 text-xs text-amber-600">Note: {item.notes}</p>}
+                                                    </div>
+                                                    <div className="text-right">
+                                                      <p className="text-sm font-semibold">{formatINR(item.price)}</p>
+                                                      {item.fileUrl && (
+                                                        <a
+                                                          href={item.fileUrl}
+                                                          target="_blank"
+                                                          rel="noopener noreferrer"
+                                                          className="mt-1 flex items-center gap-1 text-xs text-primary hover:underline"
+                                                        >
+                                                          <Download className="h-3 w-3" /> Download File
+                                                        </a>
+                                                      )}
+                                                    </div>
+                                                  </div>
+                                                </div>
+                                              );
+                                            })}
+                                          </div>
+                                        </div>
+                                        <div className="grid gap-4 sm:grid-cols-2">
+                                          <div className="rounded-lg border border-border p-3">
+                                            <h4 className="mb-2 text-xs font-semibold text-muted-foreground">Order Details</h4>
+                                            <div className="space-y-1 text-xs">
+                                              <div className="flex justify-between"><span className="text-muted-foreground">Subtotal:</span> <span>{formatINR(order.subtotal)}</span></div>
+                                              {order.discount > 0 && <div className="flex justify-between text-emerald-600"><span>Discount{order.coupon_code ? ` (${order.coupon_code})` : ''}:</span> <span>-{formatINR(order.discount)}</span></div>}
+                                              <div className="flex justify-between"><span className="text-muted-foreground">Shipping:</span> <span>{formatINR(order.shipping_cost)}</span></div>
+                                              <div className="flex justify-between font-bold"><span>Total:</span> <span>{formatINR(order.total)}</span></div>
+                                            </div>
+                                          </div>
+                                          <div className="rounded-lg border border-border p-3">
+                                            <h4 className="mb-2 text-xs font-semibold text-muted-foreground">Shipping & Payment</h4>
+                                            <div className="space-y-1 text-xs">
+                                              <p><span className="text-muted-foreground">Courier:</span> {order.courier_type}</p>
+                                              {order.delivery_type_label && <p><span className="text-muted-foreground">Delivery:</span> {order.delivery_type_label}</p>}
+                                              <p><span className="text-muted-foreground">Payment Method:</span> {order.payment_method}</p>
+                                              <p><span className="text-muted-foreground">Payment Status:</span> {order.payment_status}</p>
+                                              {order.tracking_id && <p><span className="text-muted-foreground">Tracking ID:</span> <span className="font-mono">{order.tracking_id}</span></p>}
+                                              {order.notes && <p><span className="text-muted-foreground">Notes:</span> {order.notes}</p>}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                )}
+                              </>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
@@ -903,7 +1162,7 @@ export default function AdminPage() {
                         <Label className="text-xs">Firebase Phone Auth Enabled (true/false)</Label>
                         <Input value={settingsForm.firebase_phone_auth_enabled ?? ''} onChange={(e) => setSettingsForm({ ...settingsForm, firebase_phone_auth_enabled: e.target.value })} placeholder="false" />
                       </div>
-                      <p className="mt-2 text-xs text-muted-foreground">Set to 'true' when Firebase Phone Auth is activated. Supabase Phone Auth is used by default.</p>
+                      <p className="mt-2 text-xs text-muted-foreground">Set to 'true' when Firebase Phone Auth is activated. Firebase Phone Auth is used by default.</p>
                     </div>
                   </div>
                 </CardContent>
