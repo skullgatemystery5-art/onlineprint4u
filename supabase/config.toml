@@ -1,7 +1,0 @@
-project_id = "tyfiyacbstbmyewnlivo"
-
-[functions.firebase-auth-bridge]
-verify_jwt = false
-
-[functions.notify-order]
-verify_jwt = false

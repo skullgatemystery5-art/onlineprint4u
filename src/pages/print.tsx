@@ -31,7 +31,7 @@ import {
   RATE_CARD,
   getPrintRateLocal,
 } from '@/lib/pricing';
-import type { OrderItem, PaperGsm } from '@/lib/supabase';
+import type { OrderItem, PaperGsm } from '@/lib/database';
 import { cn } from '@/lib/utils';
 import { FileUploader, type UploadedFile } from '@/components/print/file-uploader';
 import { StepAddress, type AddressData } from '@/components/print/step-address';
@@ -50,7 +50,7 @@ const RECAPTCHA_ID = 'print-recaptcha-container';
 
 export default function PrintPage() {
   const navigate = useNavigate();
-  const { user, profile, sendPhoneOtp, verifyPhoneOtp } = useAuth();
+  const { user, profile, sendPhoneOtp, verifyPhoneOtp, otpSending } = useAuth();
   const { addItem, clearCart } = useCart();
   const [step, setStep] = useState(1);
   const [files, setFiles] = useState<UploadedFile[]>([]);
@@ -157,7 +157,7 @@ export default function PrintPage() {
         ...fileItem,
         price: Math.round(fileTotal * 100) / 100,
       };
-      addItem(item);
+      addItem(item, file.file);
     });
     setStep(3);
   };
@@ -512,10 +512,10 @@ export default function PrintPage() {
                       </div>
                       <Button
                         onClick={handleSendOtp}
-                        disabled={authBusy || phoneInput.length !== 10}
+                        disabled={authBusy || otpSending || phoneInput.length !== 10}
                         className="w-full gap-2"
                       >
-                        {authBusy ? (
+                        {authBusy || otpSending ? (
                           <>
                             <Loader2 className="h-4 w-4 animate-spin" /> Sending OTP...
                           </>
@@ -556,7 +556,7 @@ export default function PrintPage() {
                         </button>
                         <button
                           onClick={otpTimer === 0 ? handleSendOtp : undefined}
-                          disabled={otpTimer > 0}
+                          disabled={otpTimer > 0 || otpSending}
                           className="text-sm text-primary hover:underline disabled:opacity-50"
                         >
                           {otpTimer > 0 ? `Resend in ${otpTimer}s` : 'Resend OTP'}

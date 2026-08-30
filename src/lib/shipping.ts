@@ -1,4 +1,4 @@
-import type { OrderItem, PaperGsm } from './supabase';
+import type { OrderItem, PaperGsm } from './database';
 
 // ============================================================
 // SHIPPING & DELIVERY MODULE — Zero External API Dependencies

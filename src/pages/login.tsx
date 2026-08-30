@@ -18,7 +18,7 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const redirect = searchParams.get('redirect') || '/dashboard';
-  const { sendPhoneOtp, verifyPhoneOtp, sendEmailOtp, verifyEmailOtp } = useAuth();
+  const { sendPhoneOtp, verifyPhoneOtp, sendEmailOtp, verifyEmailOtp, otpSending } = useAuth();
   const [mode, setMode] = useState<LoginMode>('phone');
   const [step, setStep] = useState<LoginStep>('credentials');
 
@@ -156,8 +156,8 @@ export default function LoginPage() {
               </div>
             </div>
           )}
-          <Button type="submit" className="w-full gap-2" disabled={loading || (mode === 'phone' && phone.length !== 10)}>
-            {loading ? (
+          <Button type="submit" className="w-full gap-2" disabled={loading || otpSending || (mode === 'phone' && phone.length !== 10)}>
+            {loading || otpSending ? (
               <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Sending code...</>
             ) : (
               <>Send Verification Code <ArrowRight className="h-4 w-4" /></>

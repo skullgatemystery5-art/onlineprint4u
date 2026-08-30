@@ -11,7 +11,7 @@ import {
 import { Header } from '@/components/header';
 import { Footer } from '@/components/footer';
 import { Button } from '@/components/ui/button';
-import { getOrder, isFirebaseConfigured, type Order } from '@/lib/supabase';
+import { getOrder, isFirebaseConfigured, type Order } from '@/lib/database';
 import { formatINR } from '@/lib/pricing';
 import { openWhatsAppBill } from '@/lib/whatsapp';
 

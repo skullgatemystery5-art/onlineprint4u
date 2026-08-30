@@ -1,4 +1,4 @@
-import type { Order } from './supabase';
+import type { Order } from './database';
 
 function formatINR(amount: number): string {
   return `Rs. ${amount.toFixed(2)}`;

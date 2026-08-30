@@ -18,7 +18,7 @@ import { db, isFirebaseConfigured } from './firebase';
 export { isFirebaseConfigured };
 
 // ============================================================
-// TYPES — kept identical to the original supabase.ts
+// TYPES
 // ============================================================
 
 export type Profile = {
@@ -69,6 +69,7 @@ export type OrderItem = {
   premiumPhoto: boolean;
   notes: string;
   price: number;
+  fileUrl?: string;
 };
 
 export type Order = {
