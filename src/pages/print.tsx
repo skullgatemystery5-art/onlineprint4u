@@ -157,7 +157,7 @@ export default function PrintPage() {
         ...fileItem,
         price: Math.round(fileTotal * 100) / 100,
       };
-      addItem(item);
+      addItem(item, file.file);
     });
     setStep(3);
   };

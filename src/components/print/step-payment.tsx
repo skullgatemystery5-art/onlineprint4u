@@ -26,6 +26,7 @@ import {
   type OrderItem,
 } from '@/lib/database';
 import { sendOwnerNotifications } from '@/lib/notify';
+import { uploadOrderFile } from '@/lib/storage';
 import { formatINR } from '@/lib/pricing';
 import { siteConfig, advancePercentage } from '@/lib/site-config';
 import { isValidWhatsAppPhone } from '@/lib/whatsapp';
@@ -45,6 +46,7 @@ export function StepPayment({ address, onBack }: Props) {
   const { user, profile } = useAuth();
   const {
     items,
+    fileObjects,
     coupon,
     totals,
     selectedCourier,
@@ -122,10 +124,21 @@ export function StepPayment({ address, onBack }: Props) {
 
       const shippingAddress = `${address.line1}${address.line2 ? ', ' + address.line2 : ''}, ${address.city}, ${address.state}`;
 
+      const tempOrderId = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+
+      const itemsWithUrls: OrderItem[] = await Promise.all(
+        items.map(async (item) => {
+          const rawFile = fileObjects[item.id];
+          if (!rawFile) return item;
+          const url = await uploadOrderFile(rawFile, tempOrderId, item.id);
+          return url ? { ...item, fileUrl: url } : item;
+        })
+      );
+
       const order = await insertOrder({
         order_number: orderNumber,
         user_id: user.uid,
-        items: items as OrderItem[],
+        items: itemsWithUrls,
         subtotal: totals.subtotal,
         discount: totals.discount,
         coupon_code: coupon?.code ?? null,

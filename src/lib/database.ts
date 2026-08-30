@@ -69,6 +69,7 @@ export type OrderItem = {
   premiumPhoto: boolean;
   notes: string;
   price: number;
+  fileUrl?: string;
 };
 
 export type Order = {
