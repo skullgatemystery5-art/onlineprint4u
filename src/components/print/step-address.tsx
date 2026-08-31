@@ -5,6 +5,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/lib/auth-context';
 
+function cleanIndianPhone(value: string): string {
+  const digits = value.replace(/\D/g, '');
+  return digits.length > 10 ? digits.slice(-10) : digits;
+}
+
 export type AddressData = {
   name: string;
   phone: string;
@@ -24,14 +29,17 @@ type Props = {
 
 export function StepAddress({ initial, onBack, onNext }: Props) {
   const { profile } = useAuth();
-  const [addr, setAddr] = useState<AddressData>(initial);
+  const [addr, setAddr] = useState<AddressData>(() => ({
+    ...initial,
+    phone: cleanIndianPhone(initial.phone),
+  }));
 
   useEffect(() => {
     if (profile) {
       setAddr((prev) => ({
         ...prev,
         name: prev.name || profile.full_name || '',
-        phone: prev.phone || profile.phone || '',
+        phone: prev.phone || cleanIndianPhone(profile.phone || ''),
         email: prev.email || profile.email || '',
       }));
     }
@@ -84,7 +92,7 @@ export function StepAddress({ initial, onBack, onNext }: Props) {
               <Input
                 id="addr-phone"
                 value={addr.phone}
-                onChange={(e) => setAddr({ ...addr, phone: e.target.value.replace(/\D/g, '').slice(0, 10) })}
+                onChange={(e) => setAddr({ ...addr, phone: cleanIndianPhone(e.target.value).slice(0, 10) })}
                 placeholder="10-digit mobile"
                 maxLength={10}
                 className="flex-1"

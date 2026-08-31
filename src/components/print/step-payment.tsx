@@ -103,6 +103,7 @@ export function StepPayment({ address, onBack }: Props) {
   };
 
   const handlePlaceOrder = async () => {
+    if (placing) return;
     if (!user) {
       toast.error('Please log in first.');
       return;
@@ -331,7 +332,9 @@ export function StepPayment({ address, onBack }: Props) {
         </div>
         <div className="mb-4 flex items-center gap-2 rounded-lg bg-emerald-500/10 p-3 text-sm font-medium text-emerald-700">
           <ShieldCheck className="h-4 w-4 shrink-0" />
-          Pay 50% Now &amp; Pay Rest 50% After Receiving Your Package!
+          {paymentMethod === 'advance'
+            ? 'Pay 50% Now & Pay Rest 50% After Receiving Your Package!'
+            : 'Pay 100% Online Now — No Payment Due on Delivery'}
         </div>
         <div className="mb-4 space-y-2 rounded-xl border border-border bg-muted/30 p-4">
           <div className="flex justify-between text-sm">
@@ -389,7 +392,7 @@ export function StepPayment({ address, onBack }: Props) {
             </>
           )}
         </Button>
-        {!paymentDone && (
+        {!paymentDone && !placing && (
           <p className="mt-2 text-center text-xs text-amber-600">Complete payment above to enable ordering</p>
         )}
         <p className="mt-3 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
