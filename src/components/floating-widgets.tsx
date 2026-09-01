@@ -3,7 +3,7 @@ import { Calculator, X, Minus, Plus, LogIn } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth-context';
 import { formatINR, PAPER_GSM_OPTIONS, BINDING_OPTIONS } from '@/lib/pricing';
-import { getActivePricingRates, getActiveShippingRates, isSupabaseConfigured, type PricingRate, type ShippingRate, type PaperGsm } from '@/lib/database';
+import { getActivePricingRates, getActiveShippingRates, isFirebaseConfigured, type PricingRate, type ShippingRate, type PaperGsm } from '@/lib/database';
 import { siteConfig } from '@/lib/site-config';
 import { isValidWhatsAppPhone } from '@/lib/whatsapp';
 
@@ -53,7 +53,7 @@ export function FloatingWidgets() {
   const [shippingRates, setShippingRates] = useState<ShippingRate[]>([]);
 
   useEffect(() => {
-    if (!isSupabaseConfigured) return;
+    if (!isFirebaseConfigured) return;
     getActivePricingRates().then(setRates).catch(() => {});
     getActiveShippingRates().then(setShippingRates).catch(() => {});
   }, []);

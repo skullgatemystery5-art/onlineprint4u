@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Star, Quote } from 'lucide-react';
-import { getActiveReviews, isSupabaseConfigured, type Review } from '@/lib/database';
+import { getActiveReviews, isFirebaseConfigured, type Review } from '@/lib/database';
 import { cn } from '@/lib/utils';
 
 const fallbackReviews: Review[] = [
@@ -23,7 +23,7 @@ export function Reviews() {
   const [reviews, setReviews] = useState<Review[]>(fallbackReviews);
 
   useEffect(() => {
-    if (!isSupabaseConfigured) return;
+    if (!isFirebaseConfigured) return;
     getActiveReviews().then((data) => {
       if (data.length > 0) setReviews(data);
     });

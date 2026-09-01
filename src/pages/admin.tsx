@@ -62,7 +62,7 @@ import {
   updateShippingRate as updateShippingRateDb,
   getSiteSettings,
   upsertSiteSetting,
-  isSupabaseConfigured,
+  isFirebaseConfigured,
   type Order,
   type Profile,
   type Coupon,
@@ -142,7 +142,7 @@ export default function AdminPage() {
   }, [user, profile, authLoading, navigate]);
 
   const loadAll = async () => {
-    if (!isSupabaseConfigured) {
+    if (!isFirebaseConfigured) {
       setDbError('Please configure valid database credentials to view data.');
       setLoading(false);
       return;
@@ -1164,12 +1164,12 @@ export default function AdminPage() {
                     </div>
 
                     <div>
-                      <h3 className="mb-3 font-display text-sm font-semibold">Authentication</h3>
+                      <h3 className="mb-3 font-display text-sm font-semibold">Firebase Phone Auth</h3>
                       <div>
-                        <Label className="text-xs">Auth Provider</Label>
-                        <Input value="Supabase Email/Password" disabled className="bg-muted/50" />
+                        <Label className="text-xs">Firebase Phone Auth Enabled (true/false)</Label>
+                        <Input value={settingsForm.firebase_phone_auth_enabled ?? ''} onChange={(e) => setSettingsForm({ ...settingsForm, firebase_phone_auth_enabled: e.target.value })} placeholder="false" />
                       </div>
-                      <p className="mt-2 text-xs text-muted-foreground">Authentication is handled by Supabase. Users sign in with email and password.</p>
+                      <p className="mt-2 text-xs text-muted-foreground">Set to 'true' when Firebase Phone Auth is activated. Firebase Phone Auth is used by default.</p>
                     </div>
                   </div>
                 </CardContent>
