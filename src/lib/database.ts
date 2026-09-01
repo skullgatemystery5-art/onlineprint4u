@@ -432,6 +432,24 @@ export async function getOrdersByUser(userId: string): Promise<Order[]> {
 }
 
 export async function getAllOrders(): Promise<Order[]> {
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (!error && data) {
+        return data.map((d: Record<string, unknown>) => ({
+          ...d,
+          items: d.items as OrderItem[],
+          created_at: (d.created_at as string) ?? new Date().toISOString(),
+          updated_at: (d.updated_at as string) ?? new Date().toISOString(),
+        }) as Order);
+      }
+    } catch {
+      // Fall through to Firebase
+    }
+  }
   if (!db) return [];
   try {
     const snap = await getDocs(query(collection(db, 'orders'), orderBy('created_at', 'desc')));
@@ -444,11 +462,23 @@ export async function getAllOrders(): Promise<Order[]> {
 }
 
 export async function updateOrder(id: string, updates: Partial<Order>): Promise<void> {
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { error } = await supabase.from('orders').update(updates).eq('id', id);
+      if (!error) return;
+    } catch {
+      // Fall through to Firebase
+    }
+  }
   if (!db) return;
-  await updateDoc(doc(db, 'orders', id), {
-    ...updates,
-    updated_at: serverTimestamp(),
-  });
+  try {
+    await updateDoc(doc(db, 'orders', id), {
+      ...updates,
+      updated_at: serverTimestamp(),
+    });
+  } catch {
+    // non-blocking
+  }
 }
 
 // ============================================================
