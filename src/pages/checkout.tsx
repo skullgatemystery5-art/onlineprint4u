@@ -38,6 +38,7 @@ import {
   type Address,
 } from '@/lib/database';
 import { sendOwnerNotifications } from '@/lib/notify';
+import { uploadOrderFile } from '@/lib/storage';
 import { formatINR } from '@/lib/pricing';
 import { siteConfig, advancePercentage } from '@/lib/site-config';
 import { isValidWhatsAppPhone } from '@/lib/whatsapp';
@@ -55,6 +56,7 @@ export default function CheckoutPage() {
   const { user, profile, sendPhoneOtp, verifyPhoneOtp } = useAuth();
   const {
     items,
+    fileObjects,
     coupon,
     totals,
     selectedCourier,
@@ -160,10 +162,11 @@ export default function CheckoutPage() {
     })();
     // Pre-fill name/phone/email from profile
     if (profile) {
+      const cleanPhone = (profile.phone || '').replace(/\D/g, '').slice(-10);
       setNewAddr((prev) => ({
         ...prev,
         name: profile.full_name || prev.name,
-        phone: profile.phone || prev.phone,
+        phone: prev.phone || cleanPhone,
         email: profile.email || prev.email,
       }));
     }
@@ -302,10 +305,21 @@ export default function CheckoutPage() {
       const deliveryLabel =
         shippingMethods.find((m) => m.type === selectedCourier)?.label ?? selectedCourier;
 
+      const tempOrderId = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+
+      const itemsWithUrls = await Promise.all(
+        items.map(async (item) => {
+          const rawFile = fileObjects[item.id];
+          if (!rawFile) return item;
+          const url = await uploadOrderFile(rawFile, tempOrderId, item.id);
+          return url ? { ...item, fileUrl: url } : item;
+        })
+      );
+
       const order = await insertOrder({
         order_number: orderNumber,
         user_id: user.uid,
-        items: items,
+        items: itemsWithUrls,
         subtotal: totals.subtotal,
         discount: totals.discount,
         coupon_code: coupon?.code ?? null,
@@ -954,7 +968,9 @@ export default function CheckoutPage() {
               {/* Trust Badge */}
               <div className="mb-4 flex items-center gap-2 rounded-lg bg-emerald-500/10 p-3 text-sm font-medium text-emerald-700">
                 <ShieldCheck className="h-4 w-4 shrink-0" />
-                Pay 50% Now &amp; Pay Rest 50% After Receiving Your Package!
+                {paymentMethod === 'advance'
+                  ? 'Pay 50% Now & Pay Rest 50% After Receiving Your Package!'
+                  : 'Pay 100% Online Now — No Payment Due on Delivery'}
               </div>
 
               {/* Weight & Cost Breakdown */}
@@ -1017,7 +1033,7 @@ export default function CheckoutPage() {
                   </>
                 )}
               </Button>
-              {!paymentDone && (
+              {!paymentDone && !placing && (
                 <p className="mt-2 text-center text-xs text-amber-600">
                   Complete payment above to enable ordering
                 </p>
