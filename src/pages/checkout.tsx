@@ -299,6 +299,13 @@ export default function CheckoutPage() {
 
     setPlacing(true);
 
+    // Safety timeout: stop spinner after 30s if something hangs
+    const timeoutId = setTimeout(() => {
+      setPlacing(false);
+      orderPlacedRef.current = false;
+      toast.error('Order is taking too long. Please try again or contact support.');
+    }, 30000);
+
     try {
       const orderNumber = `PO4U-${Date.now().toString(36).toUpperCase()}`;
 
@@ -388,11 +395,14 @@ export default function CheckoutPage() {
       }
 
       clearCart();
+      clearTimeout(timeoutId);
       toast.success('Order placed successfully!');
       navigate(`/order/success?id=${order.id}`);
     } catch {
+      clearTimeout(timeoutId);
       toast.error('Failed to place order. Please try again.');
       setPlacing(false);
+      orderPlacedRef.current = false;
     }
   };
 

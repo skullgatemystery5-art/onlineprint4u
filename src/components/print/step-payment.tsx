@@ -119,6 +119,11 @@ export function StepPayment({ address, onBack }: Props) {
     }
 
     setPlacing(true);
+    const timeoutId = setTimeout(() => {
+      setPlacing(false);
+      orderPlacedRef.current = false;
+      toast.error('Order is taking too long. Please try again or contact support.');
+    }, 30000);
     try {
       const orderNumber = `PO4U-${Date.now().toString(36).toUpperCase()}`;
       const deliveryLabel =
@@ -204,11 +209,14 @@ export function StepPayment({ address, onBack }: Props) {
       }
 
       clearCart();
+      clearTimeout(timeoutId);
       toast.success('Order placed successfully!');
       navigate(`/order/success?id=${order.id}`);
     } catch {
+      clearTimeout(timeoutId);
       toast.error('Failed to place order. Please try again.');
       setPlacing(false);
+      orderPlacedRef.current = false;
     }
   };
 

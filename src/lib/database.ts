@@ -14,8 +14,10 @@ import {
   type Timestamp,
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from './firebase';
+import { supabase, isSupabaseConfigured } from './supabase';
 
 export { isFirebaseConfigured };
+export { isSupabaseConfigured };
 
 // ============================================================
 // TYPES
@@ -230,6 +232,20 @@ export async function getAllProfiles(): Promise<Profile[]> {
 // ============================================================
 
 export async function getAddresses(userId: string): Promise<Address[]> {
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('addresses')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+      if (!error && data) {
+        return data as Address[];
+      }
+    } catch {
+      // Fall through to Firebase
+    }
+  }
   if (!db) return [];
   try {
     const snap = await getDocs(
@@ -244,6 +260,31 @@ export async function getAddresses(userId: string): Promise<Address[]> {
 }
 
 export async function insertAddress(addr: Omit<Address, 'id' | 'created_at' | 'updated_at'>): Promise<string | null> {
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data, error } = await supabase.from('addresses').insert({
+        user_id: addr.user_id,
+        label: addr.label,
+        name: addr.name,
+        phone: addr.phone,
+        alternate_phone: addr.alternate_phone,
+        email: addr.email,
+        line1: addr.line1,
+        line2: addr.line2,
+        house_flat: addr.house_flat,
+        street_area: addr.street_area,
+        landmark: addr.landmark,
+        city: addr.city,
+        state: addr.state,
+        pincode: addr.pincode,
+        delivery_instructions: addr.delivery_instructions,
+        is_default: addr.is_default,
+      }).select().single();
+      if (!error && data) return data.id;
+    } catch {
+      // Fall through to Firebase
+    }
+  }
   if (!db) return null;
   try {
     const ref = await addDoc(collection(db, 'addresses'), {
@@ -277,6 +318,46 @@ export async function deleteAddress(id: string): Promise<void> {
 export async function insertOrder(
   order: Omit<Order, 'id' | 'created_at' | 'updated_at'>
 ): Promise<Order | null> {
+  // Try Supabase first (no CORS issues), fall back to Firebase
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data, error } = await supabase.from('orders').insert({
+        order_number: order.order_number,
+        user_id: order.user_id,
+        items: order.items,
+        subtotal: order.subtotal,
+        discount: order.discount,
+        coupon_code: order.coupon_code,
+        shipping_cost: order.shipping_cost,
+        total: order.total,
+        payment_method: order.payment_method,
+        payment_status: order.payment_status,
+        order_status: order.order_status,
+        shipping_name: order.shipping_name,
+        shipping_phone: order.shipping_phone,
+        shipping_address: order.shipping_address,
+        shipping_pincode: order.shipping_pincode,
+        courier_type: order.courier_type,
+        delivery_type_label: order.delivery_type_label,
+        payment_screenshot_url: order.payment_screenshot_url,
+        customer_email: order.customer_email,
+        tracking_id: order.tracking_id,
+        notes: order.notes,
+      }).select().single();
+      if (error) throw error;
+      if (data) {
+        return {
+          ...data,
+          items: data.items as OrderItem[],
+          created_at: data.created_at ?? new Date().toISOString(),
+          updated_at: data.updated_at ?? new Date().toISOString(),
+        } as Order;
+      }
+    } catch {
+      // Fall through to Firebase
+    }
+  }
+
   if (!db) return null;
   try {
     const ref = await addDoc(collection(db, 'orders'), {
@@ -292,6 +373,21 @@ export async function insertOrder(
 }
 
 export async function getOrder(id: string): Promise<Order | null> {
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data, error } = await supabase.from('orders').select('*').eq('id', id).single();
+      if (!error && data) {
+        return {
+          ...data,
+          items: data.items as OrderItem[],
+          created_at: data.created_at ?? new Date().toISOString(),
+          updated_at: data.updated_at ?? new Date().toISOString(),
+        } as Order;
+      }
+    } catch {
+      // Fall through to Firebase
+    }
+  }
   if (!db) return null;
   try {
     const snap = await getDoc(doc(db, 'orders', id));
@@ -303,6 +399,25 @@ export async function getOrder(id: string): Promise<Order | null> {
 }
 
 export async function getOrdersByUser(userId: string): Promise<Order[]> {
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+      if (!error && data) {
+        return data.map((d: Record<string, unknown>) => ({
+          ...d,
+          items: d.items as OrderItem[],
+          created_at: (d.created_at as string) ?? new Date().toISOString(),
+          updated_at: (d.updated_at as string) ?? new Date().toISOString(),
+        }) as Order);
+      }
+    } catch {
+      // Fall through to Firebase
+    }
+  }
   if (!db) return [];
   try {
     const snap = await getDocs(
@@ -341,6 +456,18 @@ export async function updateOrder(id: string, updates: Partial<Order>): Promise<
 // ============================================================
 
 export async function insertStatusLog(entry: { order_id: string; status: string; note: string }): Promise<void> {
+  if (isSupabaseConfigured && supabase) {
+    try {
+      await supabase.from('order_status_log').insert({
+        order_id: entry.order_id,
+        status: entry.status,
+        note: entry.note,
+      });
+      return;
+    } catch {
+      // Fall through to Firebase
+    }
+  }
   if (!db) return;
   try {
     await addDoc(collection(db, 'order_status_log'), {

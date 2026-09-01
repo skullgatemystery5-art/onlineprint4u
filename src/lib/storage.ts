@@ -1,24 +1,20 @@
-import {
-  ref,
-  uploadBytes,
-  getDownloadURL,
-  type FirebaseStorage,
-} from 'firebase/storage';
-import { storage } from './firebase';
+import { supabase, isSupabaseConfigured } from './supabase';
 
 export async function uploadOrderFile(
   file: File,
   orderId: string,
   itemId: string
 ): Promise<string | null> {
-  if (!storage) return null;
+  if (!isSupabaseConfigured || !supabase) return null;
   try {
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const path = `order-files/${orderId}/${itemId}-${safeName}`;
-    const fileRef = ref(storage as FirebaseStorage, path);
-    await uploadBytes(fileRef, file);
-    const url = await getDownloadURL(fileRef);
-    return url;
+    const path = `${orderId}/${itemId}-${safeName}`;
+    const { error } = await supabase.storage
+      .from('order-files')
+      .upload(path, file, { upsert: true });
+    if (error) return null;
+    const { data } = supabase.storage.from('order-files').getPublicUrl(path);
+    return data?.publicUrl ?? null;
   } catch {
     return null;
   }
