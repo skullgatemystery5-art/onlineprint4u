@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -60,6 +60,7 @@ export function StepPayment({ address, onBack }: Props) {
   const [paymentProcessing, setPaymentProcessing] = useState(false);
   const [razorpayPaymentId, setRazorpayPaymentId] = useState<string | null>(null);
   const [placing, setPlacing] = useState(false);
+  const orderPlacedRef = useRef(false);
 
   const advanceAmount = Math.round(totals.total * advancePercentage * 100) / 100;
   const balanceAmount = Math.round((totals.total - advanceAmount) * 100) / 100;
@@ -210,6 +211,14 @@ export function StepPayment({ address, onBack }: Props) {
       setPlacing(false);
     }
   };
+
+  // Auto-place order immediately when payment succeeds — no manual button needed
+  useEffect(() => {
+    if (paymentDone && razorpayPaymentId && !orderPlacedRef.current && !placing) {
+      orderPlacedRef.current = true;
+      handlePlaceOrder();
+    }
+  }, [paymentDone, razorpayPaymentId]);
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -376,24 +385,15 @@ export function StepPayment({ address, onBack }: Props) {
           )}
         </div>
 
-        <Button
-          onClick={handlePlaceOrder}
-          disabled={placing || !paymentDone || !user}
-          className="mt-4 w-full gap-2"
-          size="lg"
-        >
-          {placing ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" /> Placing Order...
-            </>
-          ) : (
-            <>
-              <ShieldCheck className="h-4 w-4" /> Confirm &amp; Place Order
-            </>
-          )}
-        </Button>
+        {placing && (
+          <div className="mt-4 flex flex-col items-center gap-3 rounded-xl border border-primary/20 bg-primary/5 p-6">
+            <Loader2 className="h-6 w-6 animate-spin text-primary" />
+            <p className="text-sm font-semibold text-primary">Saving your order...</p>
+            <p className="text-xs text-muted-foreground">Please do not close this page.</p>
+          </div>
+        )}
         {!paymentDone && !placing && (
-          <p className="mt-2 text-center text-xs text-amber-600">Complete payment above to enable ordering</p>
+          <p className="mt-2 text-center text-xs text-amber-600">Complete payment above to place your order</p>
         )}
         <p className="mt-3 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
           <Truck className="h-3 w-3" /> Secure checkout • Invoice included

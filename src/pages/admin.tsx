@@ -59,7 +59,7 @@ import {
   getAllPricingRates,
   updatePricingRate,
   getAllShippingRates,
-  updateShippingRate,
+  updateShippingRate as updateShippingRateDb,
   getSiteSettings,
   upsertSiteSetting,
   isFirebaseConfigured,
@@ -179,7 +179,7 @@ export default function AdminPage() {
 
   const updateOrderStatus = async (orderId: string, status: string) => {
     try {
-      await updateOrder(orderId, { order_status: status });
+      await updateOrder(orderId, { order_status: status as Order['order_status'] });
       await insertStatusLog({ order_id: orderId, status, note: `Status updated to ${status}` });
       setOrders((prev) =>
         prev.map((o) => (o.id === orderId ? { ...o, order_status: status as Order['order_status'] } : o))
@@ -216,7 +216,7 @@ export default function AdminPage() {
 
   const updateShippingRate = async (rate: ShippingRate) => {
     try {
-      await updateShippingRate(rate.id, {
+      await updateShippingRateDb(rate.id, {
         label: rate.label,
         base_rate: rate.base_rate,
         per_kg_rate: rate.per_kg_rate,
@@ -233,13 +233,15 @@ export default function AdminPage() {
 
   const saveCoupon = async () => {
     try {
-      const payload = {
+      const payload: Omit<Coupon, 'id' | 'created_at' | 'updated_at' | 'used_count'> = {
         code: couponForm.code.toUpperCase(),
         description: couponForm.description,
-        discount_type: couponForm.discount_type,
+        discount_type: couponForm.discount_type as 'flat' | 'percent',
         value: couponForm.value,
         min_order: couponForm.min_order,
         max_discount: couponForm.max_discount ? parseFloat(couponForm.max_discount) : null,
+        expires_at: null,
+        usage_limit: null,
         active: couponForm.active,
       };
       if (editingCoupon) {
