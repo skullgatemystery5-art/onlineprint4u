@@ -8,8 +8,8 @@ import {
   Loader2,
   Truck,
   ShieldCheck,
-  Smartphone,
   CheckCircle2,
+  ArrowRight,
   Bike,
   Plane,
   Store,
@@ -29,7 +29,7 @@ import { toast } from 'sonner';
 import { useCart } from '@/lib/cart-context';
 import { useAuth } from '@/lib/auth-context';
 import {
-  isFirebaseConfigured,
+  isSupabaseConfigured,
   getAddresses,
   insertAddress,
   insertOrder,
@@ -53,7 +53,7 @@ type CheckoutSection = 'auth' | 'address' | 'delivery' | 'payment' | 'review';
 
 export default function CheckoutPage() {
   const navigate = useNavigate();
-  const { user, profile, sendPhoneOtp, verifyPhoneOtp } = useAuth();
+  const { user, profile, signInWithEmail, signUpWithEmail } = useAuth();
   const {
     items,
     fileObjects,
@@ -72,14 +72,11 @@ export default function CheckoutPage() {
 
   const [showPolicy, setShowPolicy] = useState(false);
 
-  // --- Auth state (embedded phone OTP) ---
-  const [authStep, setAuthStep] = useState<'phone' | 'otp' | 'done'>('phone');
-  const [phoneInput, setPhoneInput] = useState('');
-  const [otpInput, setOtpInput] = useState('');
-  const [fullName, setFullName] = useState('');
+  // --- Auth state (embedded email/password) ---
+  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
   const [emailInput, setEmailInput] = useState('');
-  const [otpSent, setOtpSent] = useState(false);
-  const [otpTimer, setOtpTimer] = useState(0);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [fullName, setFullName] = useState('');
   const [authBusy, setAuthBusy] = useState(false);
 
   // --- Address state ---
@@ -131,18 +128,10 @@ export default function CheckoutPage() {
     return Boolean(selectedAddress);
   }
 
-  // --- OTP timer ---
-  useEffect(() => {
-    if (otpTimer > 0) {
-      const t = setTimeout(() => setOtpTimer(otpTimer - 1), 1000);
-      return () => clearTimeout(t);
-    }
-  }, [otpTimer]);
-
   // --- Load addresses when user is available ---
   useEffect(() => {
     if (!user) return;
-    if (!isFirebaseConfigured) {
+    if (!isSupabaseConfigured) {
       setUseNewAddress(true);
       return;
     }
@@ -182,40 +171,33 @@ export default function CheckoutPage() {
     review: null,
   };
 
-  // --- Phone OTP handlers ---
-  const handleSendOtp = async () => {
-    const cleaned = phoneInput.replace(/\D/g, '');
-    if (cleaned.length !== 10) {
-      toast.error('Enter a valid 10-digit mobile number.');
+  // --- Email/password auth handler ---
+  const handleAuthSubmit = async () => {
+    if (!emailInput || !emailInput.includes('@')) {
+      toast.error('Please enter a valid email address.');
+      return;
+    }
+    if (!passwordInput || passwordInput.length < 6) {
+      toast.error('Password must be at least 6 characters.');
       return;
     }
     setAuthBusy(true);
-    const { error } = await sendPhoneOtp(cleaned, 'checkout-recaptcha-container');
-    setAuthBusy(false);
-    if (error) {
-      toast.error(error);
-      return;
+    if (authMode === 'signup') {
+      if (!fullName.trim()) {
+        toast.error('Please enter your name.');
+        setAuthBusy(false);
+        return;
+      }
+      const { error } = await signUpWithEmail(emailInput, passwordInput, fullName.trim());
+      setAuthBusy(false);
+      if (error) { toast.error(error); return; }
+      toast.success('Account created! Welcome to Online Print 4U.');
+    } else {
+      const { error } = await signInWithEmail(emailInput, passwordInput);
+      setAuthBusy(false);
+      if (error) { toast.error(error); return; }
+      toast.success('Welcome back!');
     }
-    setOtpSent(true);
-    setAuthStep('otp');
-    setOtpTimer(30);
-    toast.success('OTP sent to +91 ' + cleaned);
-  };
-
-  const handleVerifyOtp = async () => {
-    if (otpInput.length !== 6) {
-      toast.error('Enter the 6-digit OTP.');
-      return;
-    }
-    setAuthBusy(true);
-    const { error } = await verifyPhoneOtp(otpInput);
-    setAuthBusy(false);
-    if (error) {
-      toast.error(error);
-      return;
-    }
-    setAuthStep('done');
-    toast.success('Login successful!');
   };
 
   // --- Razorpay payment handler ---
@@ -238,7 +220,7 @@ export default function CheckoutPage() {
       prefill: {
         name: profile?.full_name || fullName || '',
         email: profile?.email || emailInput || newAddr.email || '',
-        contact: profile?.phone || phoneInput || newAddr.phone || '',
+        contact: profile?.phone || newAddr.phone || '',
       },
       notes: {
         payment_type: paymentMethod,
@@ -471,98 +453,86 @@ export default function CheckoutPage() {
 
               {!user && (
                 <div className="space-y-4">
-                  {authStep === 'phone' && (
-                    <>
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <div className="space-y-2">
-                          <Label htmlFor="auth-phone">Mobile Number</Label>
-                          <div className="flex items-center gap-2">
-                            <span className="flex h-10 items-center rounded-lg border border-border bg-muted/50 px-3 text-sm font-medium text-muted-foreground">
-                              +91
-                            </span>
-                            <Input
-                              id="auth-phone"
-                              value={phoneInput}
-                              onChange={(e) => setPhoneInput(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                              placeholder="10-digit mobile number"
-                              maxLength={10}
-                              className="flex-1"
-                            />
-                          </div>
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="auth-name">Full Name (optional)</Label>
-                          <Input
-                            id="auth-name"
-                            value={fullName}
-                            onChange={(e) => setFullName(e.target.value)}
-                            placeholder="Your name"
-                          />
-                        </div>
-                      </div>
-                      <Button
-                        onClick={handleSendOtp}
-                        disabled={authBusy || phoneInput.length !== 10}
-                        className="w-full gap-2"
-                      >
-                        {authBusy ? (
-                          <><Loader2 className="h-4 w-4 animate-spin" /> Sending OTP...</>
-                        ) : (
-                          <><Smartphone className="h-4 w-4" /> Send OTP</>
-                        )}
-                      </Button>
-                    </>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setAuthMode('signin')}
+                      className={cn(
+                        'flex-1 rounded-lg border-2 px-4 py-2 text-sm font-medium transition-all',
+                        authMode === 'signin' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'
+                      )}
+                    >
+                      Sign In
+                    </button>
+                    <button
+                      onClick={() => setAuthMode('signup')}
+                      className={cn(
+                        'flex-1 rounded-lg border-2 px-4 py-2 text-sm font-medium transition-all',
+                        authMode === 'signup' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'
+                      )}
+                    >
+                      Sign Up
+                    </button>
+                  </div>
+
+                  {authMode === 'signup' && (
+                    <div className="space-y-2">
+                      <Label htmlFor="auth-name">Full Name</Label>
+                      <Input
+                        id="auth-name"
+                        value={fullName}
+                        onChange={(e) => setFullName(e.target.value)}
+                        placeholder="Your full name"
+                      />
+                    </div>
                   )}
 
-                  {authStep === 'otp' && (
-                    <>
-                      <div className="rounded-lg bg-primary/5 p-3 text-sm text-muted-foreground">
-                        Enter the 6-digit OTP sent to <span className="font-semibold text-foreground">+91 {phoneInput}</span>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="auth-otp">Enter OTP</Label>
-                        <Input
-                          id="auth-otp"
-                          value={otpInput}
-                          onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                          placeholder="6-digit code"
-                          maxLength={6}
-                          className="text-center text-lg tracking-widest"
-                        />
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <button
-                          onClick={() => { setAuthStep('phone'); setOtpSent(false); setOtpInput(''); }}
-                          className="text-sm text-muted-foreground hover:underline"
-                        >
-                          Change number
-                        </button>
-                        <button
-                          onClick={otpTimer === 0 ? handleSendOtp : undefined}
-                          disabled={otpTimer > 0}
-                          className="text-sm text-primary hover:underline disabled:opacity-50"
-                        >
-                          {otpTimer > 0 ? `Resend in ${otpTimer}s` : 'Resend OTP'}
-                        </button>
-                      </div>
-                      <Button
-                        onClick={handleVerifyOtp}
-                        disabled={authBusy || otpInput.length !== 6}
-                        className="w-full gap-2"
-                      >
-                        {authBusy ? (
-                          <><Loader2 className="h-4 w-4 animate-spin" /> Verifying...</>
-                        ) : (
-                          <><Check className="h-4 w-4" /> Verify & Login</>
-                        )}
-                      </Button>
-                    </>
-                  )}
+                  <div className="space-y-2">
+                    <Label htmlFor="auth-email">Email Address</Label>
+                    <Input
+                      id="auth-email"
+                      type="email"
+                      value={emailInput}
+                      onChange={(e) => setEmailInput(e.target.value)}
+                      placeholder="you@example.com"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="auth-password">Password</Label>
+                    <Input
+                      id="auth-password"
+                      type="password"
+                      value={passwordInput}
+                      onChange={(e) => setPasswordInput(e.target.value)}
+                      placeholder="At least 6 characters"
+                    />
+                  </div>
+
+                  <Button
+                    onClick={handleAuthSubmit}
+                    disabled={authBusy}
+                    className="w-full gap-2"
+                  >
+                    {authBusy ? (
+                      <><Loader2 className="h-4 w-4 animate-spin" /> {authMode === 'signup' ? 'Creating account...' : 'Signing in...'}</>
+                    ) : (
+                      <>{authMode === 'signup' ? 'Create Account' : 'Sign In'} <ArrowRight className="h-4 w-4" /></>
+                    )}
+                  </Button>
+
+                  <p className="text-center text-xs text-muted-foreground">
+                    {authMode === 'signin' ? "Don't have an account? " : 'Already have an account? '}
+                    <button
+                      onClick={() => setAuthMode(authMode === 'signin' ? 'signup' : 'signin')}
+                      className="text-primary hover:underline"
+                    >
+                      {authMode === 'signin' ? 'Sign up' : 'Sign in'}
+                    </button>
+                  </p>
                 </div>
               )}
 
-              {/* Hidden reCAPTCHA container for Firebase Phone Auth */}
-              {!user && <div id="checkout-recaptcha-container" className="min-h-[1px]" />}
+
 
               {user && (
                 <div className="flex items-center gap-3 rounded-lg bg-emerald-500/10 p-4">

@@ -34,7 +34,7 @@ import {
   getAddresses,
   insertAddress,
   updateAddress,
-  isFirebaseConfigured,
+  isSupabaseConfigured,
   type Address,
 } from '@/lib/database';
 import { useAuth } from '@/lib/auth-context';
@@ -94,7 +94,7 @@ export default function DeliveryDetailsPage() {
 
   const loadAddresses = async () => {
     if (!user) return;
-    if (!isFirebaseConfigured) {
+    if (!isSupabaseConfigured) {
       setShowForm(true);
       setLoadingAddresses(false);
       return;

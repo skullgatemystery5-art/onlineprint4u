@@ -11,7 +11,7 @@ import {
 import { Header } from '@/components/header';
 import { Footer } from '@/components/footer';
 import { Button } from '@/components/ui/button';
-import { getOrder, isFirebaseConfigured, isSupabaseConfigured, type Order } from '@/lib/database';
+import { getOrder, isSupabaseConfigured, type Order } from '@/lib/database';
 import { formatINR } from '@/lib/pricing';
 import { openWhatsAppBill } from '@/lib/whatsapp';
 
@@ -24,7 +24,7 @@ export default function OrderSuccessPage() {
 
   useEffect(() => {
     if (!orderId) return;
-    if (!isFirebaseConfigured && !isSupabaseConfigured) {
+    if (!isSupabaseConfigured) {
       setLoading(false);
       return;
     }

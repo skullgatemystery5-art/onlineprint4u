@@ -33,7 +33,6 @@ import {
   insertAddress,
   updateAddress,
   deleteAddress,
-  isFirebaseConfigured,
   isSupabaseConfigured,
   type Order,
   type Address,
@@ -78,7 +77,7 @@ export default function DashboardPage() {
       navigate('/login?redirect=/dashboard');
       return;
     }
-    if (!isFirebaseConfigured && !isSupabaseConfigured) {
+    if (!isSupabaseConfigured) {
       setLoading(false);
       return;
     }
