@@ -72,6 +72,7 @@ import {
 import { useAuth } from '@/lib/auth-context';
 import { formatINR } from '@/lib/pricing';
 import { cn } from '@/lib/utils';
+import { getOrderFileUrl } from '@/lib/storage';
 
 const statusOptions = ['placed', 'processing', 'printed', 'shipped', 'delivered', 'cancelled'];
 
@@ -463,7 +464,9 @@ export default function AdminPage() {
                               premiumPhoto: boolean;
                               notes: string;
                               price: number;
+                              filePath?: string;
                               fileUrl?: string;
+                              file_url?: string;
                             }>;
                             return (
                               <>
@@ -567,24 +570,25 @@ export default function AdminPage() {
                                     </Button>
                                   </td>
                                   <td className="py-3 pr-4">
-                                    {orderItems.some((item) => item.fileUrl) ? (
+                                    {orderItems.some((item) => getOrderFileUrl(item.fileUrl ?? item.filePath ?? item.file_url ?? '')) ? (
                                       <div className="flex flex-col gap-1">
-                                        {orderItems.filter((item) => item.fileUrl).slice(0, 1).map((item, i) => (
-                                          <a
-                                            key={i}
-                                            href={item.fileUrl}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="flex items-center gap-1 text-xs text-primary hover:underline"
-                                          >
-                                            <Download className="h-3 w-3" /> Download
-                                          </a>
-                                        ))}
-                                        {orderItems.filter((item) => item.fileUrl).length > 1 && (
-                                          <span className="text-xs text-muted-foreground">
-                                            +{orderItems.filter((item) => item.fileUrl).length - 1} more files
-                                          </span>
-                                        )}
+                                        {orderItems
+                                          .filter((item) => getOrderFileUrl(item.fileUrl ?? item.filePath ?? item.file_url ?? ''))
+                                          .map((item, i) => {
+                                            const fileLink = getOrderFileUrl(item.fileUrl ?? item.filePath ?? item.file_url ?? '');
+                                            return fileLink ? (
+                                              <a
+                                                key={`${item.filePath ?? item.fileUrl}-${i}`}
+                                                href={fileLink}
+                                                download={item.fileName}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="flex items-center gap-1 text-xs text-primary hover:underline"
+                                              >
+                                                <Download className="h-3 w-3" /> {item.fileName}
+                                              </a>
+                                            ) : null;
+                                          })}
                                       </div>
                                     ) : (
                                       <span className="text-xs text-muted-foreground">No file</span>
@@ -616,9 +620,10 @@ export default function AdminPage() {
                                                     </div>
                                                     <div className="text-right">
                                                       <p className="text-sm font-semibold">{formatINR(item.price)}</p>
-                                                      {item.fileUrl && (
+                                                      {getOrderFileUrl(item.fileUrl ?? item.filePath ?? item.file_url ?? '') && (
                                                         <a
-                                                          href={item.fileUrl}
+                                                          href={getOrderFileUrl(item.fileUrl ?? item.filePath ?? item.file_url ?? '') ?? undefined}
+                                                          download={item.fileName}
                                                           target="_blank"
                                                           rel="noopener noreferrer"
                                                           className="mt-1 flex items-center gap-1 text-xs text-primary hover:underline"

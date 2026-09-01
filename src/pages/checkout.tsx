@@ -313,14 +313,12 @@ export default function CheckoutPage() {
       const deliveryLabel =
         shippingMethods.find((m) => m.type === selectedCourier)?.label ?? selectedCourier;
 
-      const tempOrderId = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-
       const itemsWithUrls = await Promise.all(
         items.map(async (item) => {
           const rawFile = fileObjects[item.id];
           if (!rawFile) return item;
-          const url = await uploadOrderFile(rawFile, tempOrderId, item.id);
-          return url ? { ...item, fileUrl: url } : item;
+          const uploadedFile = await uploadOrderFile(rawFile, orderNumber, item.id);
+          return { ...item, filePath: uploadedFile.path, fileUrl: uploadedFile.url };
         })
       );
 

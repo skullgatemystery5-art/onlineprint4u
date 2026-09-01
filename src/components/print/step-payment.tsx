@@ -131,14 +131,12 @@ export function StepPayment({ address, onBack }: Props) {
 
       const shippingAddress = `${address.line1}${address.line2 ? ', ' + address.line2 : ''}, ${address.city}, ${address.state}`;
 
-      const tempOrderId = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-
       const itemsWithUrls: OrderItem[] = await Promise.all(
         items.map(async (item) => {
           const rawFile = fileObjects[item.id];
           if (!rawFile) return item;
-          const url = await uploadOrderFile(rawFile, tempOrderId, item.id);
-          return url ? { ...item, fileUrl: url } : item;
+          const uploadedFile = await uploadOrderFile(rawFile, orderNumber, item.id);
+          return { ...item, filePath: uploadedFile.path, fileUrl: uploadedFile.url };
         })
       );
 

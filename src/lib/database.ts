@@ -71,6 +71,7 @@ export type OrderItem = {
   premiumPhoto: boolean;
   notes: string;
   price: number;
+  filePath?: string;
   fileUrl?: string;
 };
 
