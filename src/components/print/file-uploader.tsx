@@ -127,7 +127,7 @@ export function FileUploader({
           {loadingPages ? 'Reading PDF pages…' : 'Drop files here or click to browse'}
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
-          PDF, DOCX, PPTX, JPG, PNG • Max 50MB
+          PDF, DOCX, PPTX, JPG, PNG • Max 4.5MB
         </p>
       </div>
 
