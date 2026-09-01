@@ -396,9 +396,10 @@ export default function CheckoutPage() {
       clearTimeout(timeoutId);
       toast.success('Order placed successfully!');
       navigate(`/order/success?id=${order.id}`);
-    } catch {
+    } catch (err) {
       clearTimeout(timeoutId);
-      toast.error('Failed to place order. Please try again.');
+      const msg = err instanceof Error ? err.message : 'Failed to place order. Please try again.';
+      toast.error(msg);
       setPlacing(false);
       orderPlacedRef.current = false;
     }
