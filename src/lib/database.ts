@@ -385,7 +385,7 @@ export async function insertOrder(
       customer_email: order.customer_email,
       tracking_id: order.tracking_id,
       notes: order.notes,
-    }).select().single();
+    }).select().maybeSingle();
     if (error) throw new Error(error.message || 'Failed to save order to database');
     if (data) {
       return {
