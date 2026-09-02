@@ -187,7 +187,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(authUser);
 
         const phone = authUser.phoneNumber ?? '';
-        const displayName = authUser.displayName ?? 'User';
+        const displayName = authUser.displayName ?? '';
         const email = authUser.email ?? '';
 
         await upsertProfile({
@@ -249,7 +249,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           uid: userCred.user.uid,
           phoneNumber: userCred.user.phoneNumber,
           email: userCred.user.email,
-          displayName: userCred.user.displayName ?? 'Admin',
+          displayName: userCred.user.displayName ?? '',
         };
         setUser(authUser);
 

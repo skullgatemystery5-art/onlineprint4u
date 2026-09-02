@@ -74,7 +74,7 @@ import { formatINR } from '@/lib/pricing';
 import { cn } from '@/lib/utils';
 import { getOrderFileUrl } from '@/lib/storage';
 
-const statusOptions = ['placed', 'processing', 'printed', 'shipped', 'delivered', 'cancelled'];
+const statusOptions = ['placed', 'processing', 'packed', 'shipped', 'out_for_delivery', 'delivered', 'cancelled'];
 
 export default function AdminPage() {
   const navigate = useNavigate();
@@ -343,7 +343,7 @@ export default function AdminPage() {
 
   // Analytics
   const totalRevenue = orders.filter((o) => o.payment_status === 'paid').reduce((s, o) => s + o.total, 0);
-  const pendingOrders = orders.filter((o) => ['placed', 'processing', 'printed'].includes(o.order_status)).length;
+  const pendingOrders = orders.filter((o) => ['placed', 'processing', 'packed'].includes(o.order_status)).length;
   const deliveredOrders = orders.filter((o) => o.order_status === 'delivered').length;
   const printQueue = orders.filter((o) => ['placed', 'processing'].includes(o.order_status));
 

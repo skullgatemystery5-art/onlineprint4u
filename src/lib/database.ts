@@ -90,8 +90,9 @@ export type Order = {
   order_status:
     | 'placed'
     | 'processing'
-    | 'printed'
+    | 'packed'
     | 'shipped'
+    | 'out_for_delivery'
     | 'delivered'
     | 'cancelled';
   shipping_name: string;
@@ -208,13 +209,14 @@ export async function getProfile(uid: string): Promise<Profile | null> {
 export async function upsertProfile(profile: Omit<Profile, 'created_at' | 'updated_at'>): Promise<void> {
   if (isSupabaseConfigured && supabase) {
     try {
-      const { error } = await supabase.from('profiles').upsert({
+      const updates: Record<string, string> = {
         id: profile.id,
-        email: profile.email,
-        full_name: profile.full_name,
-        phone: profile.phone,
         role: profile.role,
-      });
+      };
+      if (profile.email) updates.email = profile.email;
+      if (profile.full_name) updates.full_name = profile.full_name;
+      if (profile.phone) updates.phone = profile.phone;
+      const { error } = await supabase.from('profiles').upsert(updates);
       if (!error) return;
     } catch {
       // Fall through to Firebase
@@ -385,7 +387,7 @@ export async function insertOrder(
       customer_email: order.customer_email,
       tracking_id: order.tracking_id,
       notes: order.notes,
-    }).select().maybeSingle();
+    }).select().single();
     if (error) throw new Error(error.message || 'Failed to save order to database');
     if (data) {
       return {

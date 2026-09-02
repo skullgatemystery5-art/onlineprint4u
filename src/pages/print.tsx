@@ -590,7 +590,7 @@ export default function PrintPage() {
                   <ShieldCheck className="h-5 w-5 text-emerald-600" />
                   <div className="flex-1">
                     <p className="text-sm font-semibold text-emerald-700">
-                      Authenticated as {profile?.full_name || user.displayName || 'User'}
+                      Authenticated as {profile?.full_name || user.displayName || 'Verified Customer'}
                     </p>
                     <p className="text-xs text-emerald-600">{user.phoneNumber || user.email}</p>
                   </div>

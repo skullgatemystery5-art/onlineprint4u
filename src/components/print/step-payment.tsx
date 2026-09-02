@@ -25,7 +25,7 @@ import {
   type Order,
   type OrderItem,
 } from '@/lib/database';
-import { sendOwnerNotifications } from '@/lib/notify';
+import { openWhatsAppBill } from '@/lib/whatsapp';
 import { uploadOrderFile } from '@/lib/storage';
 import { formatINR } from '@/lib/pricing';
 import { siteConfig, advancePercentage } from '@/lib/site-config';
@@ -200,8 +200,9 @@ export function StepPayment({ address, onBack }: Props) {
         // Non-blocking
       }
 
+      // Send order confirmation to customer's WhatsApp
       try {
-        await sendOwnerNotifications(order);
+        openWhatsAppBill(order);
       } catch {
         // Non-blocking
       }

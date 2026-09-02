@@ -37,7 +37,7 @@ import {
   type Order,
   type Address,
 } from '@/lib/database';
-import { sendOwnerNotifications } from '@/lib/notify';
+import { openWhatsAppBill } from '@/lib/whatsapp';
 import { uploadOrderFile } from '@/lib/storage';
 import { formatINR } from '@/lib/pricing';
 import { siteConfig, advancePercentage } from '@/lib/site-config';
@@ -385,9 +385,9 @@ export default function CheckoutPage() {
         // Non-blocking
       }
 
-      // Send owner notification (WhatsApp via wa.me — opens a new tab)
+      // Send order confirmation to customer's WhatsApp
       try {
-        await sendOwnerNotifications(order);
+        openWhatsAppBill(order);
       } catch {
         // Non-blocking
       }
@@ -569,7 +569,7 @@ export default function CheckoutPage() {
                   <CheckCircle2 className="h-5 w-5 text-emerald-600" />
                   <div className="flex-1">
                     <p className="text-sm font-semibold text-emerald-700">
-                      Authenticated as {profile?.full_name || user.displayName || 'User'}
+                      Authenticated as {profile?.full_name || user.displayName || 'Verified Customer'}
                     </p>
                     <p className="text-xs text-emerald-600">{user.phoneNumber || user.email}</p>
                   </div>

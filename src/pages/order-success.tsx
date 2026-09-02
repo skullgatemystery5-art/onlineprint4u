@@ -5,8 +5,8 @@ import {
   Package,
   FileText,
   MessageCircle,
-  ExternalLink,
   Loader2,
+  Truck,
 } from 'lucide-react';
 import { Header } from '@/components/header';
 import { Footer } from '@/components/footer';
@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { getOrder, isFirebaseConfigured, isSupabaseConfigured, type Order } from '@/lib/database';
 import { formatINR } from '@/lib/pricing';
 import { openWhatsAppBill } from '@/lib/whatsapp';
+import { OrderTrackingModal } from '@/components/order-tracking-modal';
 
 export default function OrderSuccessPage() {
   const [searchParams] = useSearchParams();
@@ -21,6 +22,7 @@ export default function OrderSuccessPage() {
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
   const [autoOpened, setAutoOpened] = useState(false);
+  const [showTracking, setShowTracking] = useState(false);
 
   useEffect(() => {
     if (!orderId) return;
@@ -116,14 +118,24 @@ export default function OrderSuccessPage() {
             </div>
 
             <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-              <Link to="/dashboard" className="flex-1">
-                <Button className="w-full gap-2">
-                  <Package className="h-4 w-4" /> Track Order
-                </Button>
-              </Link>
+              <Button
+                className="flex-1 gap-2"
+                disabled={!order}
+                onClick={() => setShowTracking(true)}
+              >
+                <Truck className="h-4 w-4" /> Track Order
+              </Button>
               <Link to="/print" className="flex-1">
                 <Button variant="outline" className="w-full gap-2">
                   <FileText className="h-4 w-4" /> Print More
+                </Button>
+              </Link>
+            </div>
+
+            <div className="mt-3">
+              <Link to="/dashboard">
+                <Button variant="ghost" className="w-full gap-2 text-sm">
+                  <Package className="h-4 w-4" /> Go to Dashboard
                 </Button>
               </Link>
             </div>
@@ -137,6 +149,12 @@ export default function OrderSuccessPage() {
         </div>
       </main>
       <Footer />
+
+      <OrderTrackingModal
+        orderId={orderId ?? ''}
+        open={showTracking}
+        onClose={() => setShowTracking(false)}
+      />
     </>
   );
 }

@@ -41,17 +41,17 @@ import {
 import { useAuth } from '@/lib/auth-context';
 import { formatINR } from '@/lib/pricing';
 import { cn } from '@/lib/utils';
+import { OrderTrackingModal, TRACKING_STEPS, getStepIndex } from '@/components/order-tracking-modal';
 
 const statusConfig: Record<string, { icon: typeof Package; color: string; label: string }> = {
   placed: { icon: Clock, color: 'bg-blue-500/10 text-blue-600', label: 'Order Placed' },
   processing: { icon: Printer, color: 'bg-amber-500/10 text-amber-600', label: 'Processing' },
-  printed: { icon: FileText, color: 'bg-purple-500/10 text-purple-600', label: 'Printed' },
+  packed: { icon: Package, color: 'bg-orange-500/10 text-orange-600', label: 'Packed' },
   shipped: { icon: Truck, color: 'bg-sky-500/10 text-sky-600', label: 'Shipped' },
+  out_for_delivery: { icon: Truck, color: 'bg-indigo-500/10 text-indigo-600', label: 'Out for Delivery' },
   delivered: { icon: CheckCircle2, color: 'bg-emerald-500/10 text-emerald-600', label: 'Delivered' },
   cancelled: { icon: XCircle, color: 'bg-destructive/10 text-destructive', label: 'Cancelled' },
 };
-
-const trackingSteps = ['placed', 'processing', 'printed', 'shipped', 'delivered'];
 
 export default function DashboardPage() {
   const navigate = useNavigate();
@@ -60,6 +60,7 @@ export default function DashboardPage() {
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddrForm, setShowAddrForm] = useState(false);
+  const [trackingOrderId, setTrackingOrderId] = useState<string | null>(null);
   const [editingAddr, setEditingAddr] = useState<Address | null>(null);
   const [addrForm, setAddrForm] = useState({
     label: 'Home',
@@ -182,7 +183,7 @@ export default function DashboardPage() {
         <div className="container mx-auto max-w-6xl px-4 lg:px-8">
           <div className="mb-8">
             <h1 className="font-display text-3xl font-bold">
-              Welcome, {profile?.full_name?.split(' ')[0] ?? 'User'}!
+              Welcome, {profile?.full_name?.split(' ')[0] ?? 'Customer'}!
             </h1>
             <p className="mt-1 text-muted-foreground">Manage your orders, addresses, and invoices.</p>
           </div>
@@ -311,11 +312,14 @@ export default function DashboardPage() {
                           >
                             <Download className="h-3.5 w-3.5" /> Invoice
                           </Button>
-                          <Link to={`/order/success?id=${order.id}`}>
-                            <Button variant="ghost" size="sm" className="gap-1.5">
-                              <Truck className="h-3.5 w-3.5" /> Track
-                            </Button>
-                          </Link>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="gap-1.5"
+                            onClick={() => setTrackingOrderId(order.id)}
+                          >
+                            <Truck className="h-3.5 w-3.5" /> Track
+                          </Button>
                         </div>
                       </CardContent>
                     </Card>
@@ -506,7 +510,7 @@ export default function DashboardPage() {
                 orders
                   .filter((o) => !['cancelled'].includes(o.order_status))
                   .map((order) => {
-                    const currentStep = trackingSteps.indexOf(order.order_status);
+                    const currentStep = getStepIndex(order.order_status);
                     return (
                       <Card key={order.id}>
                         <CardContent className="p-6">
@@ -522,13 +526,28 @@ export default function DashboardPage() {
                             </Badge>
                           </div>
 
+                          {/* Progress bar */}
+                          <div className="mb-6">
+                            <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                              <div
+                                className="h-full rounded-full bg-gradient-to-r from-primary to-primary/80 transition-all duration-700"
+                                style={{ width: `${((currentStep + 1) / TRACKING_STEPS.length) * 100}%` }}
+                              />
+                            </div>
+                            <div className="mt-1.5 flex justify-between text-xs font-medium text-muted-foreground">
+                              <span>Placed</span>
+                              <span>{Math.round(((currentStep + 1) / TRACKING_STEPS.length) * 100)}%</span>
+                              <span>Delivered</span>
+                            </div>
+                          </div>
+
                           {/* Tracking timeline */}
                           <div className="flex items-center">
-                            {trackingSteps.map((status, i) => {
-                              const Icon = statusConfig[status]?.icon ?? Clock;
+                            {TRACKING_STEPS.map((step, i) => {
+                              const Icon = step.icon;
                               const done = i <= currentStep;
                               return (
-                                <div key={status} className="flex flex-1 flex-col items-center">
+                                <div key={step.key} className="flex flex-1 flex-col items-center">
                                   <div className="flex w-full items-center">
                                     {i > 0 && (
                                       <div
@@ -542,13 +561,14 @@ export default function DashboardPage() {
                                       className={cn(
                                         'flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 transition-colors',
                                         done
-                                          ? 'border-primary bg-primary text-primary-foreground'
-                                          : 'border-border bg-background text-muted-foreground'
+                                          ? 'border-transparent text-white'
+                                          : 'border-border bg-background text-muted-foreground',
+                                        done && step.bg
                                       )}
                                     >
                                       <Icon className="h-4 w-4" />
                                     </div>
-                                    {i < trackingSteps.length - 1 && (
+                                    {i < TRACKING_STEPS.length - 1 && (
                                       <div
                                         className={cn(
                                           'h-1 flex-1',
@@ -561,7 +581,7 @@ export default function DashboardPage() {
                                     'mt-2 text-center text-xs',
                                     done ? 'font-semibold text-foreground' : 'text-muted-foreground'
                                   )}>
-                                    {statusConfig[status]?.label}
+                                    {step.label}
                                   </p>
                                 </div>
                               );
@@ -574,6 +594,13 @@ export default function DashboardPage() {
                               <span className="font-mono font-semibold">{order.tracking_id}</span>
                             </div>
                           )}
+
+                          <Button
+                            className="mt-4 w-full gap-2"
+                            onClick={() => setTrackingOrderId(order.id)}
+                          >
+                            <Truck className="h-4 w-4" /> View Detailed Tracking
+                          </Button>
                         </CardContent>
                       </Card>
                     );
@@ -584,6 +611,12 @@ export default function DashboardPage() {
         </div>
       </main>
       <Footer />
+
+      <OrderTrackingModal
+        orderId={trackingOrderId ?? ''}
+        open={trackingOrderId !== null}
+        onClose={() => setTrackingOrderId(null)}
+      />
     </>
   );
 }

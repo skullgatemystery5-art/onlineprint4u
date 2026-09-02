@@ -45,7 +45,7 @@ export function UploadArea() {
             <UploadCloud className="h-8 w-8" />
           </div>
           <p className="font-display text-lg font-semibold">Drop your files here, or click to browse</p>
-          <p className="mt-1 text-sm text-muted-foreground">Max 4.5MB per file • Multiple files supported</p>
+          <p className="mt-1 text-sm text-muted-foreground">Max 50MB per file • Multiple files supported</p>
           <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
             {supportedFormats.map((fmt) => (
               <span key={fmt} className="flex items-center gap-1 rounded-full bg-muted px-3 py-1 text-xs font-medium">
