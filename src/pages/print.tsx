@@ -596,6 +596,7 @@ export default function PrintPage() {
                       </Button>
                     </div>
                   )}
+                  git commit -m "Add recaptcha container"
 
                   {authStep === 'otp' && (
                     <div className="space-y-4">
