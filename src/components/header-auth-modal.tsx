@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   X,
   Phone,
+  Mail,
   ShieldCheck,
   Loader2,
   ArrowRight,
@@ -9,12 +10,15 @@ import {
   User,
   LogIn,
   UserPlus,
+  Timer,
+  Lock,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth-context';
+import { useCountdown } from '@/lib/use-countdown';
 import { cn } from '@/lib/utils';
 
 type AuthModalProps = {
@@ -23,55 +27,95 @@ type AuthModalProps = {
   mode: 'signin' | 'signup';
 };
 
-type Step = 'phone' | 'otp';
+type AuthMethod = 'phone' | 'email';
+type Step = 'credentials' | 'otp';
 
 const RECAPTCHA_CONTAINER_ID = 'firebase-recaptcha-container';
 
 export function HeaderAuthModal({ open, onClose, mode }: AuthModalProps) {
-  const { sendPhoneOtp, verifyPhoneOtp, otpSending } = useAuth();
-  const [step, setStep] = useState<Step>('phone');
+  const { sendPhoneOtp, verifyPhoneOtp, signInWithEmail, signUpWithEmail, otpSending } = useAuth();
+  const { secondsLeft, isCoolingDown, startCooldown } = useCountdown();
+  const [method, setMethod] = useState<AuthMethod>('phone');
+  const [step, setStep] = useState<Step>('credentials');
   const [loading, setLoading] = useState(false);
   const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [otp, setOtp] = useState('');
   const modalRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) {
-      setStep('phone');
+      setStep('credentials');
       setOtp('');
       setLoading(false);
-      // Give reCAPTCHA a fresh container each open
       const container = document.getElementById(RECAPTCHA_CONTAINER_ID);
       if (container) container.innerHTML = '';
     }
   }, [open]);
 
   const phoneValid = /^\d{10}$/.test(phone);
+  const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  const passwordValid = password.length >= 6;
 
-  const handleSendOtp = useCallback(async () => {
-    if (!phoneValid) {
-      toast.error('Please enter a valid 10-digit mobile number.');
-      return;
-    }
+  const switchMethod = (m: AuthMethod) => {
+    setMethod(m);
+    setStep('credentials');
+    setOtp('');
+  };
+
+  const handleEmailSubmit = useCallback(async () => {
     if (mode === 'signup' && !name.trim()) {
       toast.error('Please enter your name.');
       return;
     }
+    if (!emailValid) {
+      toast.error('Please enter a valid email address.');
+      return;
+    }
+    if (!passwordValid) {
+      toast.error('Password must be at least 6 characters.');
+      return;
+    }
     setLoading(true);
-    const { error } = await sendPhoneOtp(phone, RECAPTCHA_CONTAINER_ID);
+    const { error } =
+      mode === 'signup'
+        ? await signUpWithEmail(email, password, name)
+        : await signInWithEmail(email, password);
     setLoading(false);
     if (error) {
       toast.error(error);
       return;
     }
-    setStep('otp');
+    toast.success(mode === 'signup' ? 'Account created! Welcome to Online Print 4U.' : 'Welcome back!');
+    onClose();
+  }, [mode, email, emailValid, password, passwordValid, name, signInWithEmail, signUpWithEmail, onClose]);
+
+  const handleSendOtp = useCallback(async () => {
+    if (mode === 'signup' && !name.trim()) {
+      toast.error('Please enter your name.');
+      return;
+    }
+    if (!phoneValid) {
+      toast.error('Please enter a valid 10-digit mobile number.');
+      return;
+    }
+    setLoading(true);
+    const { error, cooldownSec } = await sendPhoneOtp(phone, RECAPTCHA_CONTAINER_ID);
+    setLoading(false);
+    if (error) {
+      toast.error(error);
+      if (cooldownSec) startCooldown(cooldownSec);
+      return;
+    }
     toast.success(`OTP sent to +91 ${phone}`);
-  }, [phone, phoneValid, name, mode, sendPhoneOtp]);
+    setStep('otp');
+  }, [mode, phone, phoneValid, name, sendPhoneOtp, startCooldown]);
 
   const handleVerifyOtp = useCallback(async () => {
     if (otp.length !== 6) {
-      toast.error('Please enter the 6-digit code sent to your phone.');
+      toast.error('Please enter the 6-digit verification code.');
       return;
     }
     setLoading(true);
@@ -86,19 +130,20 @@ export function HeaderAuthModal({ open, onClose, mode }: AuthModalProps) {
   }, [otp, verifyPhoneOtp, mode, onClose]);
 
   const handleResendOtp = useCallback(async () => {
+    if (isCoolingDown) return;
     if (!phoneValid) return;
     setLoading(true);
-    // Reset recaptcha container for resend
     const container = document.getElementById(RECAPTCHA_CONTAINER_ID);
     if (container) container.innerHTML = '';
-    const { error } = await sendPhoneOtp(phone, RECAPTCHA_CONTAINER_ID);
+    const { error, cooldownSec } = await sendPhoneOtp(phone, RECAPTCHA_CONTAINER_ID);
     setLoading(false);
     if (error) {
       toast.error(error);
+      if (cooldownSec) startCooldown(cooldownSec);
       return;
     }
     toast.success('New OTP sent to +91 ' + phone);
-  }, [phone, phoneValid, sendPhoneOtp]);
+  }, [phone, phoneValid, sendPhoneOtp, isCoolingDown, startCooldown]);
 
   if (!open) return null;
 
@@ -137,7 +182,30 @@ export function HeaderAuthModal({ open, onClose, mode }: AuthModalProps) {
           </div>
         </div>
 
-        {step === 'phone' && (
+        {/* Phone / Email tab switcher */}
+        <div className="mb-5 grid grid-cols-2 gap-1 rounded-xl bg-muted p-1">
+          <button
+            onClick={() => switchMethod('phone')}
+            className={cn(
+              'flex items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-medium transition-colors',
+              method === 'phone' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+            )}
+          >
+            <Phone className="h-4 w-4" /> Phone
+          </button>
+          <button
+            onClick={() => switchMethod('email')}
+            className={cn(
+              'flex items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-medium transition-colors',
+              method === 'email' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+            )}
+          >
+            <Mail className="h-4 w-4" /> Email
+          </button>
+        </div>
+
+        {/* Email mode — password-based */}
+        {method === 'email' && (
           <div className="animate-fade-in space-y-4">
             {isSignup && (
               <div className="space-y-2">
@@ -154,7 +222,66 @@ export function HeaderAuthModal({ open, onClose, mode }: AuthModalProps) {
                 </div>
               </div>
             )}
+            <div className="space-y-2">
+              <Label htmlFor="auth-email">Email Address</Label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="auth-email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  className="pl-10"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="auth-password">Password</Label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="auth-password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="At least 6 characters"
+                  className="pl-10"
+                />
+              </div>
+            </div>
+            <Button
+              className="w-full gap-2"
+              disabled={loading || !emailValid || !passwordValid || (isSignup && !name.trim())}
+              onClick={handleEmailSubmit}
+            >
+              {loading ? (
+                <><Loader2 className="h-4 w-4 animate-spin" /> {isSignup ? 'Creating account...' : 'Signing in...'}</>
+              ) : (
+                <>{isSignup ? 'Create Account' : 'Sign In'} <ArrowRight className="h-4 w-4" /></>
+              )}
+            </Button>
+          </div>
+        )}
 
+        {/* Phone mode — credentials step */}
+        {method === 'phone' && step === 'credentials' && (
+          <div className="animate-fade-in space-y-4">
+            {isSignup && (
+              <div className="space-y-2">
+                <Label htmlFor="auth-name">Full Name</Label>
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    id="auth-name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Your full name"
+                    className="pl-10"
+                  />
+                </div>
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="auth-phone">Mobile Number</Label>
               <div className="flex items-center gap-2">
@@ -171,34 +298,36 @@ export function HeaderAuthModal({ open, onClose, mode }: AuthModalProps) {
                 />
               </div>
             </div>
-
             <Button
               className="w-full gap-2"
-              disabled={!phoneValid || loading || otpSending || (isSignup && !name.trim())}
+              disabled={!phoneValid || loading || otpSending || isCoolingDown || (isSignup && !name.trim())}
               onClick={handleSendOtp}
             >
               {loading || otpSending ? (
                 <><Loader2 className="h-4 w-4 animate-spin" /> Sending code...</>
+              ) : isCoolingDown ? (
+                <><Timer className="h-4 w-4" /> Resend in {secondsLeft}s</>
               ) : (
                 <>Send Verification Code <ArrowRight className="h-4 w-4" /></>
               )}
             </Button>
-
             <p className="text-center text-xs text-muted-foreground">
               An SMS with a 6-digit code will be sent to verify your number.
             </p>
           </div>
         )}
 
-        {step === 'otp' && (
+        {/* Phone mode — OTP step */}
+        {method === 'phone' && step === 'otp' && (
           <div className="animate-fade-in space-y-4">
             <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4 text-sm">
               <p className="text-muted-foreground">
                 Enter the 6-digit code sent to{' '}
-                <span className="font-bold text-foreground">+91 {phone}</span>
+                <span className="font-bold text-foreground">
+                  +91 {phone}
+                </span>
               </p>
             </div>
-
             <div className="space-y-2">
               <Label htmlFor="auth-otp">Verification Code</Label>
               <Input
@@ -213,12 +342,11 @@ export function HeaderAuthModal({ open, onClose, mode }: AuthModalProps) {
                 autoFocus
               />
             </div>
-
             <div className="flex gap-2">
               <Button
                 variant="outline"
                 className="gap-1.5"
-                onClick={() => { setStep('phone'); setOtp(''); }}
+                onClick={() => { setStep('credentials'); setOtp(''); }}
                 disabled={loading}
               >
                 <ArrowLeft className="h-4 w-4" /> Back
@@ -235,19 +363,26 @@ export function HeaderAuthModal({ open, onClose, mode }: AuthModalProps) {
                 )}
               </Button>
             </div>
-
             <button
               onClick={handleResendOtp}
-              disabled={loading || otpSending}
+              disabled={loading || otpSending || isCoolingDown}
               className="w-full text-center text-sm text-primary hover:underline disabled:opacity-50"
             >
-              Didn&apos;t receive the code? Resend OTP
+              {isCoolingDown
+                ? `Resend available in ${secondsLeft}s`
+                : <>Didn&apos;t receive the code? Resend</>}
             </button>
+            {isCoolingDown && (
+              <div className="flex items-center justify-center gap-2 rounded-lg bg-amber-500/10 px-4 py-2.5 text-sm text-amber-700">
+                <Timer className="h-4 w-4 animate-pulse" />
+                Please wait {secondsLeft}s before requesting another code
+              </div>
+            )}
           </div>
         )}
 
-        {/* Hidden reCAPTCHA container — required by Firebase Phone Auth */}
-        <div id={RECAPTCHA_CONTAINER_ID} className="mt-2 min-h-[1px]" />
+        {/* reCAPTCHA container — required by Firebase Phone Auth */}
+        <div id={RECAPTCHA_CONTAINER_ID} className="mt-4 flex min-h-[78px] items-center justify-center" />
       </div>
     </div>
   );

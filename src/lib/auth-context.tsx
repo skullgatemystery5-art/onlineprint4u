@@ -13,7 +13,9 @@ import {
   onAuthStateChanged,
   signOut as firebaseSignOut,
   signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
   sendPasswordResetEmail,
+  updateProfile as updateFbProfile,
 } from 'firebase/auth';
 import { firebaseAuth } from './firebase';
 
@@ -24,6 +26,8 @@ type AuthUser = {
   displayName: string | null;
 };
 
+type SendOtpResult = { error: string | null; cooldownSec?: number };
+
 type AuthContextType = {
   user: AuthUser | null;
   profile: Profile | null;
@@ -32,10 +36,10 @@ type AuthContextType = {
   otpSending: boolean;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
-  sendPhoneOtp: (phone: string, recaptchaContainerId: string) => Promise<{ error: string | null }>;
+  sendPhoneOtp: (phone: string, recaptchaContainerId: string) => Promise<SendOtpResult>;
   verifyPhoneOtp: (otp: string) => Promise<{ error: string | null }>;
-  sendEmailOtp: (email: string) => Promise<{ error: string | null }>;
-  verifyEmailOtp: (email: string, token: string) => Promise<{ error: string | null }>;
+  signInWithEmail: (email: string, password: string) => Promise<{ error: string | null }>;
+  signUpWithEmail: (email: string, password: string, name: string) => Promise<{ error: string | null }>;
   adminLogin: (email: string, password: string) => Promise<{ error: string | null }>;
   adminResetPassword: (email: string) => Promise<{ error: string | null }>;
 };
@@ -50,8 +54,8 @@ const AuthContext = createContext<AuthContextType>({
   refreshProfile: async () => {},
   sendPhoneOtp: async () => ({ error: 'Not initialized' }),
   verifyPhoneOtp: async () => ({ error: 'Not initialized' }),
-  sendEmailOtp: async () => ({ error: 'Not initialized' }),
-  verifyEmailOtp: async () => ({ error: 'Not initialized' }),
+  signInWithEmail: async () => ({ error: 'Not initialized' }),
+  signUpWithEmail: async () => ({ error: 'Not initialized' }),
   adminLogin: async () => ({ error: 'Not initialized' }),
   adminResetPassword: async () => ({ error: 'Not initialized' }),
 });
@@ -83,15 +87,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       recaptchaVerifierRef.current = null;
     }
-    // Also wipe any DOM remnants so Firebase can render a fresh widget
-    document.querySelectorAll('.g-recaptcha-bubble-arrow').forEach((el) => el.remove());
   }, []);
 
   const fetchProfile = useCallback(async (uid: string) => {
-    if (!isFirebaseConfigured) {
-      setProfile(null);
-      return;
-    }
     try {
       const data = await getProfile(uid);
       setProfile(data);
@@ -134,36 +132,72 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [fetchProfile]);
 
   const sendPhoneOtp = useCallback(
-    async (phone: string, recaptchaContainerId: string): Promise<{ error: string | null }> => {
+    async (phone: string, recaptchaContainerId: string): Promise<SendOtpResult> => {
       if (!isFirebaseConfigured || !firebaseAuth) {
         return { error: 'Phone OTP is not configured. Please contact support.' };
       }
       const fullPhone = phone.startsWith('+') ? phone : `+91${phone}`;
       setOtpSending(true);
       try {
-        // 1. Fully clear any existing verifier instance
         clearRecaptcha();
 
-        // 2. Wipe the container DOM so Firebase renders a fresh widget
         const container = document.getElementById(recaptchaContainerId);
-        if (container) container.innerHTML = '';
+        if (!container) {
+          return { error: 'Verification widget could not be loaded. Please refresh the page.' };
+        }
+        container.innerHTML = '';
 
-        // 3. Let the DOM mutation flush before creating a new verifier
         await new Promise((r) => setTimeout(r, 50));
 
-        // 4. Create a fresh reCAPTCHA verifier
         const verifier = new RecaptchaVerifier(firebaseAuth, recaptchaContainerId, {
-          size: 'invisible',
+          size: 'normal',
+          'expired-callback': () => {
+            clearRecaptcha();
+          },
         });
         recaptchaVerifierRef.current = verifier;
 
-        // 5. Send the OTP
-        const result = await signInWithPhoneNumber(firebaseAuth, fullPhone, verifier);
+        await verifier.render();
+
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('RECAPTCHA_TIMEOUT')), 30000);
+        });
+
+        const result = await Promise.race([
+          signInWithPhoneNumber(firebaseAuth, fullPhone, verifier),
+          timeoutPromise,
+        ]);
         setConfirmationResult(result);
         return { error: null };
       } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Failed to send OTP';
+        const error = err as { code?: string; message?: string };
         clearRecaptcha();
+
+        if (error.message === 'RECAPTCHA_TIMEOUT') {
+          return {
+            error: 'Verification timed out. Please try again.',
+            cooldownSec: 30,
+          };
+        }
+        if (error.code === 'auth/too-many-requests') {
+          return {
+            error: 'Too many OTP requests. Please wait before requesting another code.',
+            cooldownSec: 60,
+          };
+        }
+        if (error.code === 'auth/invalid-phone-number') {
+          return { error: 'Invalid phone number. Please check and try again.' };
+        }
+        if (error.code === 'auth/captcha-check-failed') {
+          return { error: 'Verification check failed. Please try again.' };
+        }
+        if (error.code === 'auth/operation-not-allowed') {
+          return { error: 'Phone login is not enabled. Please contact support.' };
+        }
+        if (error.code === 'auth/quota-exceeded') {
+          return { error: 'SMS quota exceeded. Please try again later or use email login.' };
+        }
+        const msg = error.message ?? 'Failed to send OTP';
         return { error: msg };
       } finally {
         setOtpSending(false);
@@ -220,18 +254,95 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [confirmationResult, fetchProfile, clearRecaptcha]
   );
 
-  const sendEmailOtp = useCallback(
-    async (_email: string): Promise<{ error: string | null }> => {
-      return { error: 'Email login is not available. Please use phone number login.' };
+  const signInWithEmail = useCallback(
+    async (email: string, password: string): Promise<{ error: string | null }> => {
+      if (!isFirebaseConfigured || !firebaseAuth) {
+        return { error: 'Email login is not configured. Please contact support.' };
+      }
+      try {
+        const userCred = await signInWithEmailAndPassword(firebaseAuth, email.trim(), password);
+        if (!userCred.user) {
+          return { error: 'Login failed. No user returned.' };
+        }
+
+        const authUser = toAuthUser(userCred.user);
+        setUser(authUser);
+
+        await upsertProfile({
+          id: authUser.uid,
+          email: authUser.email ?? email.trim(),
+          full_name: authUser.displayName ?? '',
+          phone: authUser.phoneNumber ?? '',
+          role: 'user',
+        });
+
+        await fetchProfile(authUser.uid);
+        return { error: null };
+      } catch (err) {
+        const error = err as { code?: string; message?: string };
+        if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found') {
+          return { error: 'Invalid email or password.' };
+        }
+        if (error.code === 'auth/too-many-requests') {
+          return { error: 'Too many failed attempts. Please try again later.' };
+        }
+        if (error.code === 'auth/invalid-email') {
+          return { error: 'Please enter a valid email address.' };
+        }
+        const msg = error.message ?? 'Login failed. Please try again.';
+        return { error: msg };
+      }
     },
-    []
+    [fetchProfile]
   );
 
-  const verifyEmailOtp = useCallback(
-    async (_email: string, _token: string): Promise<{ error: string | null }> => {
-      return { error: 'Email login is not available. Please use phone number login.' };
+  const signUpWithEmail = useCallback(
+    async (email: string, password: string, name: string): Promise<{ error: string | null }> => {
+      if (!isFirebaseConfigured || !firebaseAuth) {
+        return { error: 'Email sign-up is not configured. Please contact support.' };
+      }
+      try {
+        const userCred = await createUserWithEmailAndPassword(firebaseAuth, email.trim(), password);
+        if (!userCred.user) {
+          return { error: 'Sign-up failed. No user returned.' };
+        }
+
+        if (name.trim()) {
+          await updateFbProfile(userCred.user, { displayName: name.trim() });
+        }
+
+        const authUser = toAuthUser(userCred.user);
+        setUser(authUser);
+
+        await upsertProfile({
+          id: authUser.uid,
+          email: authUser.email ?? email.trim(),
+          full_name: name.trim(),
+          phone: authUser.phoneNumber ?? '',
+          role: 'user',
+        });
+
+        await fetchProfile(authUser.uid);
+        return { error: null };
+      } catch (err) {
+        const error = err as { code?: string; message?: string };
+        if (error.code === 'auth/email-already-in-use') {
+          return { error: 'An account with this email already exists. Please sign in instead.' };
+        }
+        if (error.code === 'auth/weak-password') {
+          return { error: 'Password should be at least 6 characters.' };
+        }
+        if (error.code === 'auth/invalid-email') {
+          return { error: 'Please enter a valid email address.' };
+        }
+        if (error.code === 'auth/operation-not-allowed') {
+          return { error: 'Email sign-up is not enabled. Please contact support.' };
+        }
+        const msg = error.message ?? 'Sign-up failed. Please try again.';
+        return { error: msg };
+      }
     },
-    []
+    [fetchProfile]
   );
 
   const adminLogin = useCallback(
@@ -253,7 +364,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         };
         setUser(authUser);
 
-        // Ensure admin profile exists in Firestore
         await upsertProfile({
           id: authUser.uid,
           email: authUser.email ?? email.trim(),
@@ -325,8 +435,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         refreshProfile,
         sendPhoneOtp,
         verifyPhoneOtp,
-        sendEmailOtp,
-        verifyEmailOtp,
+        signInWithEmail,
+        signUpWithEmail,
         adminLogin,
         adminResetPassword,
       }}

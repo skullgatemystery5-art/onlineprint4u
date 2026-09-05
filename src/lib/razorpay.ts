@@ -1,6 +1,21 @@
+interface RazorpayResponse {
+  razorpay_payment_id: string;
+  razorpay_order_id: string;
+  razorpay_signature: string;
+}
+
+interface RazorpayErrorResponse {
+  error?: { description?: string };
+}
+
+interface RazorpayInstance {
+  open(): void;
+  on(event: 'payment.failed', handler: (response: RazorpayErrorResponse) => void): void;
+}
+
 declare global {
   interface Window {
-    Razorpay: any;
+    Razorpay: new (options: Record<string, unknown>) => RazorpayInstance;
   }
 }
 
@@ -49,7 +64,7 @@ export function initiateRazorpayPayment(options: RazorpayOptions): Promise<Razor
       prefill: options.prefill,
       notes: options.notes,
       theme: { color: '#2563EB' },
-      handler: (response: any) => {
+      handler: (response: RazorpayResponse) => {
         resolve({
           success: true,
           paymentId: response.razorpay_payment_id,
@@ -64,7 +79,7 @@ export function initiateRazorpayPayment(options: RazorpayOptions): Promise<Razor
       },
     });
 
-    rzp.on('payment.failed', (response: any) => {
+    rzp.on('payment.failed', (response: RazorpayErrorResponse) => {
       resolve({
         success: false,
         error: response.error?.description ?? 'Payment failed',

@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  LayoutDashboard,
   Users,
   Package,
   Tag,
@@ -9,8 +8,6 @@ import {
   Settings2,
   BarChart3,
   Printer,
-  FileText,
-  TrendingUp,
   IndianRupee,
   ShoppingBag,
   Clock,
@@ -19,7 +16,6 @@ import {
   Plus,
   Trash2,
   Edit2,
-  ArrowLeft,
   Settings,
   Save,
   Loader2,
@@ -71,8 +67,7 @@ import {
 } from '@/lib/database';
 import { useAuth } from '@/lib/auth-context';
 import { formatINR } from '@/lib/pricing';
-import { cn } from '@/lib/utils';
-import { getOrderFileUrl } from '@/lib/storage';
+import { getOrderFileUrl } from '@/lib/database';
 
 const statusOptions = ['placed', 'processing', 'packed', 'shipped', 'out_for_delivery', 'delivered', 'cancelled'];
 
@@ -87,8 +82,8 @@ export default function AdminPage() {
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [rates, setRates] = useState<PricingRate[]>([]);
   const [shippingRates, setShippingRates] = useState<ShippingRate[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [dbError, setDbError] = useState<string | null>(null);
+  const [, setLoading] = useState(true);
+  const [, setDbError] = useState<string | null>(null);
 
   // Edit states
   const [editingRate, setEditingRate] = useState<PricingRate | null>(null);

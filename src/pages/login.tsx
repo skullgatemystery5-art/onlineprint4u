@@ -1,12 +1,13 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Mail, Phone, Loader2, ChevronRight, ShieldCheck, ArrowRight, ArrowLeft } from 'lucide-react';
+import { Mail, Phone, Loader2, ChevronRight, ShieldCheck, ArrowRight, ArrowLeft, Timer, Lock } from 'lucide-react';
 import { AuthShell } from '@/components/auth/auth-shell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth-context';
+import { useCountdown } from '@/lib/use-countdown';
 import { cn } from '@/lib/utils';
 
 type LoginMode = 'email' | 'phone';
@@ -18,46 +19,55 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const redirect = searchParams.get('redirect') || '/dashboard';
-  const { sendPhoneOtp, verifyPhoneOtp, sendEmailOtp, verifyEmailOtp, otpSending } = useAuth();
+  const { sendPhoneOtp, verifyPhoneOtp, signInWithEmail, otpSending } = useAuth();
+  const { secondsLeft, isCoolingDown, startCooldown } = useCountdown();
   const [mode, setMode] = useState<LoginMode>('phone');
   const [step, setStep] = useState<LoginStep>('credentials');
 
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const handleEmailLogin = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !email.includes('@')) {
+      toast.error('Please enter a valid email address.');
+      return;
+    }
+    if (!password || password.length < 6) {
+      toast.error('Password must be at least 6 characters.');
+      return;
+    }
+    setLoading(true);
+    const { error } = await signInWithEmail(email, password);
+    setLoading(false);
+    if (error) {
+      toast.error(error);
+      return;
+    }
+    toast.success('Welcome back!');
+    navigate(redirect);
+  }, [email, password, signInWithEmail, navigate, redirect]);
+
   const handleSendOtp = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
-    if (mode === 'email') {
-      if (!email || !email.includes('@')) {
-        toast.error('Please enter a valid email address.');
-        return;
-      }
-      setLoading(true);
-      const { error } = await sendEmailOtp(email);
-      setLoading(false);
-      if (error) {
-        toast.error(error);
-        return;
-      }
-      toast.success('Verification code sent to your email.');
-    } else {
-      if (phone.length !== 10) {
-        toast.error('Please enter a valid 10-digit mobile number.');
-        return;
-      }
-      setLoading(true);
-      const { error } = await sendPhoneOtp(phone, RECAPTCHA_CONTAINER_ID);
-      setLoading(false);
-      if (error) {
-        toast.error(error);
-        return;
-      }
-      toast.success('Verification code sent to your phone.');
+    if (phone.length !== 10) {
+      toast.error('Please enter a valid 10-digit mobile number.');
+      return;
     }
+    setLoading(true);
+    const { error, cooldownSec } = await sendPhoneOtp(phone, RECAPTCHA_CONTAINER_ID);
+    setLoading(false);
+    if (error) {
+      toast.error(error);
+      if (cooldownSec) startCooldown(cooldownSec);
+      return;
+    }
+    toast.success('Verification code sent to your phone.');
     setStep('otp');
-  }, [mode, email, phone, sendEmailOtp, sendPhoneOtp]);
+  }, [phone, sendPhoneOtp, startCooldown]);
 
   const handleVerify = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
@@ -66,10 +76,7 @@ export default function LoginPage() {
       return;
     }
     setLoading(true);
-    const { error } =
-      mode === 'email'
-        ? await verifyEmailOtp(email, otp)
-        : await verifyPhoneOtp(otp);
+    const { error } = await verifyPhoneOtp(otp);
     setLoading(false);
     if (error) {
       toast.error(error);
@@ -77,13 +84,20 @@ export default function LoginPage() {
     }
     toast.success('Welcome back!');
     navigate(redirect);
-  }, [otp, mode, email, verifyEmailOtp, verifyPhoneOtp, navigate, redirect]);
+  }, [otp, verifyPhoneOtp, navigate, redirect]);
 
   const switchMode = (m: LoginMode) => {
     setMode(m);
     setStep('credentials');
     setOtp('');
   };
+
+  useEffect(() => {
+    return () => {
+      const container = document.getElementById(RECAPTCHA_CONTAINER_ID);
+      if (container) container.innerHTML = '';
+    };
+  }, []);
 
   return (
     <AuthShell
@@ -119,46 +133,77 @@ export default function LoginPage() {
         </button>
       </div>
 
-      {step === 'credentials' && (
+      {mode === 'email' && (
+        <form onSubmit={handleEmailLogin} className="space-y-4 animate-fade-in">
+          <div className="space-y-2">
+            <Label htmlFor="email">Email Address</Label>
+            <div className="relative">
+              <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                className="pl-10"
+                required
+              />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="password">Password</Label>
+            <div className="relative">
+              <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="At least 6 characters"
+                className="pl-10"
+                required
+              />
+            </div>
+          </div>
+          <Button type="submit" className="w-full gap-2" disabled={loading}>
+            {loading ? (
+              <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Signing in...</>
+            ) : (
+              <>Sign In <ArrowRight className="h-4 w-4" /></>
+            )}
+          </Button>
+          <div className="text-center">
+            <Link to="/forgot-password" className="text-sm text-primary hover:underline">
+              Forgot your password?
+            </Link>
+          </div>
+        </form>
+      )}
+
+      {mode === 'phone' && step === 'credentials' && (
         <form onSubmit={handleSendOtp} className="space-y-4 animate-fade-in">
-          {mode === 'email' ? (
-            <div className="space-y-2">
-              <Label htmlFor="email">Email Address</Label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@example.com"
-                  className="pl-10"
-                  required
-                />
+          <div className="space-y-2">
+            <Label htmlFor="phone">Mobile Number</Label>
+            <div className="flex items-center gap-2">
+              <div className="flex h-10 items-center rounded-lg border border-input bg-muted px-3 text-sm font-medium">
+                +91
               </div>
+              <Input
+                id="phone"
+                type="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                placeholder="10-digit number"
+                className="flex-1"
+                required
+              />
             </div>
-          ) : (
-            <div className="space-y-2">
-              <Label htmlFor="phone">Mobile Number</Label>
-              <div className="flex items-center gap-2">
-                <div className="flex h-10 items-center rounded-lg border border-input bg-muted px-3 text-sm font-medium">
-                  +91
-                </div>
-                <Input
-                  id="phone"
-                  type="tel"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                  placeholder="10-digit number"
-                  className="flex-1"
-                  required
-                />
-              </div>
-            </div>
-          )}
-          <Button type="submit" className="w-full gap-2" disabled={loading || otpSending || (mode === 'phone' && phone.length !== 10)}>
+          </div>
+          <Button type="submit" className="w-full gap-2" disabled={loading || otpSending || isCoolingDown || phone.length !== 10}>
             {loading || otpSending ? (
               <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Sending code...</>
+            ) : isCoolingDown ? (
+              <><Timer className="mr-2 h-4 w-4" /> Resend in {secondsLeft}s</>
             ) : (
               <>Send Verification Code <ArrowRight className="h-4 w-4" /></>
             )}
@@ -166,13 +211,13 @@ export default function LoginPage() {
         </form>
       )}
 
-      {step === 'otp' && (
+      {mode === 'phone' && step === 'otp' && (
         <form onSubmit={handleVerify} className="space-y-4 animate-fade-in">
           <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4 text-sm">
             <p className="text-muted-foreground">
               Enter the 6-digit code sent to{' '}
               <span className="font-bold text-foreground">
-                {mode === 'email' ? email : `+91 ${phone}`}
+                +91 {phone}
               </span>
             </p>
           </div>
@@ -206,8 +251,8 @@ export default function LoginPage() {
         </form>
       )}
 
-      {/* Hidden reCAPTCHA container for Firebase Phone Auth */}
-      <div id={RECAPTCHA_CONTAINER_ID} className="mt-2 min-h-[1px]" />
+      {/* reCAPTCHA container for Firebase Phone Auth */}
+      <div id={RECAPTCHA_CONTAINER_ID} className="mt-4 flex min-h-[78px] items-center justify-center" />
 
       <div className="mt-6 text-center">
         <Link to="/" className="text-sm text-muted-foreground hover:text-foreground">

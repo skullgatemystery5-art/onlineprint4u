@@ -11,13 +11,15 @@ import {
   orderBy,
   addDoc,
   serverTimestamp,
-  type Timestamp,
 } from 'firebase/firestore';
-import { db, isFirebaseConfigured } from './firebase';
-import { supabase, isSupabaseConfigured } from './supabase';
+import {
+  ref as storageRef,
+  uploadBytes,
+  getDownloadURL,
+} from 'firebase/storage';
+import { db, storage, isFirebaseConfigured } from './firebase';
 
 export { isFirebaseConfigured };
-export { isSupabaseConfigured };
 
 // ============================================================
 // TYPES
@@ -183,19 +185,6 @@ function normalizeDoc<T>(data: Record<string, unknown> | undefined, id: string):
 // ============================================================
 
 export async function getProfile(uid: string): Promise<Profile | null> {
-  if (isSupabaseConfigured && supabase) {
-    try {
-      const { data, error } = await supabase.from('profiles').select('*').eq('id', uid).single();
-      if (!error && data) {
-        return {
-          ...data,
-          created_at: (data.created_at as string) ?? new Date().toISOString(),
-        } as Profile;
-      }
-    } catch {
-      // Fall through to Firebase
-    }
-  }
   if (!db) return null;
   try {
     const snap = await getDoc(doc(db, 'profiles', uid));
@@ -207,21 +196,6 @@ export async function getProfile(uid: string): Promise<Profile | null> {
 }
 
 export async function upsertProfile(profile: Omit<Profile, 'created_at' | 'updated_at'>): Promise<void> {
-  if (isSupabaseConfigured && supabase) {
-    try {
-      const updates: Record<string, string> = {
-        id: profile.id,
-        role: profile.role,
-      };
-      if (profile.email) updates.email = profile.email;
-      if (profile.full_name) updates.full_name = profile.full_name;
-      if (profile.phone) updates.phone = profile.phone;
-      const { error } = await supabase.from('profiles').upsert(updates);
-      if (!error) return;
-    } catch {
-      // Fall through to Firebase
-    }
-  }
   if (!db) return;
   try {
     await setDoc(
@@ -246,22 +220,6 @@ export async function updateProfile(uid: string, updates: Partial<Profile>): Pro
 }
 
 export async function getAllProfiles(): Promise<Profile[]> {
-  if (isSupabaseConfigured && supabase) {
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (!error && data) {
-        return data.map((d: Record<string, unknown>) => ({
-          ...d,
-          created_at: (d.created_at as string) ?? new Date().toISOString(),
-        }) as Profile);
-      }
-    } catch {
-      // Fall through to Firebase
-    }
-  }
   if (!db) return [];
   try {
     const snap = await getDocs(query(collection(db, 'profiles'), orderBy('created_at', 'desc')));
@@ -278,20 +236,6 @@ export async function getAllProfiles(): Promise<Profile[]> {
 // ============================================================
 
 export async function getAddresses(userId: string): Promise<Address[]> {
-  if (isSupabaseConfigured && supabase) {
-    try {
-      const { data, error } = await supabase
-        .from('addresses')
-        .select('*')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false });
-      if (!error && data) {
-        return data as Address[];
-      }
-    } catch {
-      // Fall through to Firebase
-    }
-  }
   if (!db) return [];
   try {
     const snap = await getDocs(
@@ -306,31 +250,6 @@ export async function getAddresses(userId: string): Promise<Address[]> {
 }
 
 export async function insertAddress(addr: Omit<Address, 'id' | 'created_at' | 'updated_at'>): Promise<string | null> {
-  if (isSupabaseConfigured && supabase) {
-    try {
-      const { data, error } = await supabase.from('addresses').insert({
-        user_id: addr.user_id,
-        label: addr.label,
-        name: addr.name,
-        phone: addr.phone,
-        alternate_phone: addr.alternate_phone,
-        email: addr.email,
-        line1: addr.line1,
-        line2: addr.line2,
-        house_flat: addr.house_flat,
-        street_area: addr.street_area,
-        landmark: addr.landmark,
-        city: addr.city,
-        state: addr.state,
-        pincode: addr.pincode,
-        delivery_instructions: addr.delivery_instructions,
-        is_default: addr.is_default,
-      }).select().single();
-      if (!error && data) return data.id;
-    } catch {
-      // Fall through to Firebase
-    }
-  }
   if (!db) return null;
   try {
     const ref = await addDoc(collection(db, 'addresses'), {
@@ -364,42 +283,6 @@ export async function deleteAddress(id: string): Promise<void> {
 export async function insertOrder(
   order: Omit<Order, 'id' | 'created_at' | 'updated_at'>
 ): Promise<Order | null> {
-  if (isSupabaseConfigured && supabase) {
-    const { data, error } = await supabase.from('orders').insert({
-      order_number: order.order_number,
-      user_id: order.user_id,
-      items: order.items,
-      subtotal: order.subtotal,
-      discount: order.discount,
-      coupon_code: order.coupon_code,
-      shipping_cost: order.shipping_cost,
-      total: order.total,
-      payment_method: order.payment_method,
-      payment_status: order.payment_status,
-      order_status: order.order_status,
-      shipping_name: order.shipping_name,
-      shipping_phone: order.shipping_phone,
-      shipping_address: order.shipping_address,
-      shipping_pincode: order.shipping_pincode,
-      courier_type: order.courier_type,
-      delivery_type_label: order.delivery_type_label,
-      payment_screenshot_url: order.payment_screenshot_url,
-      customer_email: order.customer_email,
-      tracking_id: order.tracking_id,
-      notes: order.notes,
-    }).select().single();
-    if (error) throw new Error(error.message || 'Failed to save order to database');
-    if (data) {
-      return {
-        ...data,
-        items: data.items as OrderItem[],
-        created_at: data.created_at ?? new Date().toISOString(),
-        updated_at: data.updated_at ?? new Date().toISOString(),
-      } as Order;
-    }
-    return null;
-  }
-
   if (!db) return null;
   const ref = await addDoc(collection(db, 'orders'), {
     ...order,
@@ -411,21 +294,6 @@ export async function insertOrder(
 }
 
 export async function getOrder(id: string): Promise<Order | null> {
-  if (isSupabaseConfigured && supabase) {
-    try {
-      const { data, error } = await supabase.from('orders').select('*').eq('id', id).single();
-      if (!error && data) {
-        return {
-          ...data,
-          items: data.items as OrderItem[],
-          created_at: data.created_at ?? new Date().toISOString(),
-          updated_at: data.updated_at ?? new Date().toISOString(),
-        } as Order;
-      }
-    } catch {
-      // Fall through to Firebase
-    }
-  }
   if (!db) return null;
   try {
     const snap = await getDoc(doc(db, 'orders', id));
@@ -437,25 +305,6 @@ export async function getOrder(id: string): Promise<Order | null> {
 }
 
 export async function getOrdersByUser(userId: string): Promise<Order[]> {
-  if (isSupabaseConfigured && supabase) {
-    try {
-      const { data, error } = await supabase
-        .from('orders')
-        .select('*')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false });
-      if (!error && data) {
-        return data.map((d: Record<string, unknown>) => ({
-          ...d,
-          items: d.items as OrderItem[],
-          created_at: (d.created_at as string) ?? new Date().toISOString(),
-          updated_at: (d.updated_at as string) ?? new Date().toISOString(),
-        }) as Order);
-      }
-    } catch {
-      // Fall through to Firebase
-    }
-  }
   if (!db) return [];
   try {
     const snap = await getDocs(
@@ -470,24 +319,6 @@ export async function getOrdersByUser(userId: string): Promise<Order[]> {
 }
 
 export async function getAllOrders(): Promise<Order[]> {
-  if (isSupabaseConfigured && supabase) {
-    try {
-      const { data, error } = await supabase
-        .from('orders')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (!error && data) {
-        return data.map((d: Record<string, unknown>) => ({
-          ...d,
-          items: d.items as OrderItem[],
-          created_at: (d.created_at as string) ?? new Date().toISOString(),
-          updated_at: (d.updated_at as string) ?? new Date().toISOString(),
-        }) as Order);
-      }
-    } catch {
-      // Fall through to Firebase
-    }
-  }
   if (!db) return [];
   try {
     const snap = await getDocs(query(collection(db, 'orders'), orderBy('created_at', 'desc')));
@@ -500,14 +331,6 @@ export async function getAllOrders(): Promise<Order[]> {
 }
 
 export async function updateOrder(id: string, updates: Partial<Order>): Promise<void> {
-  if (isSupabaseConfigured && supabase) {
-    try {
-      const { error } = await supabase.from('orders').update(updates).eq('id', id);
-      if (!error) return;
-    } catch {
-      // Fall through to Firebase
-    }
-  }
   if (!db) return;
   try {
     await updateDoc(doc(db, 'orders', id), {
@@ -524,18 +347,6 @@ export async function updateOrder(id: string, updates: Partial<Order>): Promise<
 // ============================================================
 
 export async function insertStatusLog(entry: { order_id: string; status: string; note: string }): Promise<void> {
-  if (isSupabaseConfigured && supabase) {
-    try {
-      await supabase.from('order_status_log').insert({
-        order_id: entry.order_id,
-        status: entry.status,
-        note: entry.note,
-      });
-      return;
-    } catch {
-      // Fall through to Firebase
-    }
-  }
   if (!db) return;
   try {
     await addDoc(collection(db, 'order_status_log'), {
@@ -552,24 +363,6 @@ export async function insertStatusLog(entry: { order_id: string; status: string;
 // ============================================================
 
 export async function getCouponByCode(code: string): Promise<Coupon | null> {
-  if (isSupabaseConfigured && supabase) {
-    try {
-      const { data, error } = await supabase
-        .from('coupons')
-        .select('*')
-        .eq('code', code.toUpperCase())
-        .eq('active', true)
-        .single();
-      if (!error && data) {
-        return {
-          ...data,
-          expires_at: (data.expires_at as string) ?? null,
-        } as Coupon;
-      }
-    } catch {
-      // Fall through to Firebase
-    }
-  }
   if (!db) return null;
   try {
     const snap = await getDocs(
@@ -584,22 +377,6 @@ export async function getCouponByCode(code: string): Promise<Coupon | null> {
 }
 
 export async function getAllCoupons(): Promise<Coupon[]> {
-  if (isSupabaseConfigured && supabase) {
-    try {
-      const { data, error } = await supabase
-        .from('coupons')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (!error && data) {
-        return data.map((d: Record<string, unknown>) => ({
-          ...d,
-          expires_at: (d.expires_at as string) ?? null,
-        }) as Coupon);
-      }
-    } catch {
-      // Fall through to Firebase
-    }
-  }
   if (!db) return [];
   try {
     const snap = await getDocs(query(collection(db, 'coupons'), orderBy('created_at', 'desc')));
@@ -612,25 +389,6 @@ export async function getAllCoupons(): Promise<Coupon[]> {
 }
 
 export async function insertCoupon(coupon: Omit<Coupon, 'id' | 'created_at' | 'updated_at' | 'used_count'>): Promise<void> {
-  if (isSupabaseConfigured && supabase) {
-    try {
-      const { error } = await supabase.from('coupons').insert({
-        code: coupon.code,
-        description: coupon.description,
-        discount_type: coupon.discount_type,
-        value: coupon.value,
-        min_order: coupon.min_order,
-        max_discount: coupon.max_discount,
-        expires_at: coupon.expires_at,
-        usage_limit: coupon.usage_limit,
-        used_count: 0,
-        active: coupon.active,
-      });
-      if (!error) return;
-    } catch {
-      // Fall through to Firebase
-    }
-  }
   if (!db) return;
   await addDoc(collection(db, 'coupons'), {
     ...coupon,
@@ -641,14 +399,6 @@ export async function insertCoupon(coupon: Omit<Coupon, 'id' | 'created_at' | 'u
 }
 
 export async function updateCoupon(id: string, updates: Partial<Coupon>): Promise<void> {
-  if (isSupabaseConfigured && supabase) {
-    try {
-      const { error } = await supabase.from('coupons').update(updates).eq('id', id);
-      if (!error) return;
-    } catch {
-      // Fall through to Firebase
-    }
-  }
   if (!db) return;
   await updateDoc(doc(db, 'coupons', id), {
     ...updates,
@@ -657,14 +407,6 @@ export async function updateCoupon(id: string, updates: Partial<Coupon>): Promis
 }
 
 export async function deleteCoupon(id: string): Promise<void> {
-  if (isSupabaseConfigured && supabase) {
-    try {
-      const { error } = await supabase.from('coupons').delete().eq('id', id);
-      if (!error) return;
-    } catch {
-      // Fall through to Firebase
-    }
-  }
   if (!db) return;
   await deleteDoc(doc(db, 'coupons', id));
 }
@@ -674,18 +416,6 @@ export async function deleteCoupon(id: string): Promise<void> {
 // ============================================================
 
 export async function getActivePricingRates(): Promise<PricingRate[]> {
-  if (isSupabaseConfigured && supabase) {
-    try {
-      const { data, error } = await supabase
-        .from('pricing_rates')
-        .select('*')
-        .eq('active', true)
-        .order('category', { ascending: true });
-      if (!error && data) return data as PricingRate[];
-    } catch {
-      // Fall through to Firebase
-    }
-  }
   if (!db) return [];
   try {
     const snap = await getDocs(
@@ -700,17 +430,6 @@ export async function getActivePricingRates(): Promise<PricingRate[]> {
 }
 
 export async function getAllPricingRates(): Promise<PricingRate[]> {
-  if (isSupabaseConfigured && supabase) {
-    try {
-      const { data, error } = await supabase
-        .from('pricing_rates')
-        .select('*')
-        .order('category', { ascending: true });
-      if (!error && data) return data as PricingRate[];
-    } catch {
-      // Fall through to Firebase
-    }
-  }
   if (!db) return [];
   try {
     const snap = await getDocs(query(collection(db, 'pricing_rates'), orderBy('category', 'asc')));
@@ -723,14 +442,6 @@ export async function getAllPricingRates(): Promise<PricingRate[]> {
 }
 
 export async function updatePricingRate(id: string, updates: Partial<PricingRate>): Promise<void> {
-  if (isSupabaseConfigured && supabase) {
-    try {
-      const { error } = await supabase.from('pricing_rates').update(updates).eq('id', id);
-      if (!error) return;
-    } catch {
-      // Fall through to Firebase
-    }
-  }
   if (!db) return;
   await updateDoc(doc(db, 'pricing_rates', id), updates);
 }
@@ -740,18 +451,6 @@ export async function updatePricingRate(id: string, updates: Partial<PricingRate
 // ============================================================
 
 export async function getActiveShippingRates(): Promise<ShippingRate[]> {
-  if (isSupabaseConfigured && supabase) {
-    try {
-      const { data, error } = await supabase
-        .from('shipping_rates')
-        .select('*')
-        .eq('active', true)
-        .order('base_rate', { ascending: true });
-      if (!error && data) return data as ShippingRate[];
-    } catch {
-      // Fall through to Firebase
-    }
-  }
   if (!db) return [];
   try {
     const snap = await getDocs(
@@ -766,17 +465,6 @@ export async function getActiveShippingRates(): Promise<ShippingRate[]> {
 }
 
 export async function getAllShippingRates(): Promise<ShippingRate[]> {
-  if (isSupabaseConfigured && supabase) {
-    try {
-      const { data, error } = await supabase
-        .from('shipping_rates')
-        .select('*')
-        .order('base_rate', { ascending: true });
-      if (!error && data) return data as ShippingRate[];
-    } catch {
-      // Fall through to Firebase
-    }
-  }
   if (!db) return [];
   try {
     const snap = await getDocs(query(collection(db, 'shipping_rates'), orderBy('base_rate', 'asc')));
@@ -789,14 +477,6 @@ export async function getAllShippingRates(): Promise<ShippingRate[]> {
 }
 
 export async function updateShippingRate(id: string, updates: Partial<ShippingRate>): Promise<void> {
-  if (isSupabaseConfigured && supabase) {
-    try {
-      const { error } = await supabase.from('shipping_rates').update(updates).eq('id', id);
-      if (!error) return;
-    } catch {
-      // Fall through to Firebase
-    }
-  }
   if (!db) return;
   await updateDoc(doc(db, 'shipping_rates', id), updates);
 }
@@ -806,20 +486,6 @@ export async function updateShippingRate(id: string, updates: Partial<ShippingRa
 // ============================================================
 
 export async function getSiteSettings(): Promise<Record<string, string>> {
-  if (isSupabaseConfigured && supabase) {
-    try {
-      const { data, error } = await supabase.from('site_settings').select('*');
-      if (!error && data) {
-        const map: Record<string, string> = {};
-        data.forEach((d: Record<string, unknown>) => {
-          if (d.key) map[d.key as string] = (d.value as string) ?? '';
-        });
-        return map;
-      }
-    } catch {
-      // Fall through to Firebase
-    }
-  }
   if (!db) return {};
   try {
     const snap = await getDocs(collection(db, 'site_settings'));
@@ -835,19 +501,6 @@ export async function getSiteSettings(): Promise<Record<string, string>> {
 }
 
 export async function upsertSiteSetting(key: string, value: string): Promise<void> {
-  if (isSupabaseConfigured && supabase) {
-    try {
-      const { error } = await supabase.from('site_settings').upsert({
-        key,
-        value,
-        description: '',
-        updated_at: new Date().toISOString(),
-      });
-      if (!error) return;
-    } catch {
-      // Fall through to Firebase
-    }
-  }
   if (!db) return;
   const snap = await getDocs(query(collection(db, 'site_settings'), where('key', '==', key)));
   if (!snap.empty) {
@@ -874,20 +527,6 @@ export async function insertContactMessage(msg: {
   subject: string;
   message: string;
 }): Promise<void> {
-  if (isSupabaseConfigured && supabase) {
-    try {
-      const { error } = await supabase.from('contact_messages').insert({
-        name: msg.name,
-        email: msg.email,
-        phone: msg.phone,
-        subject: msg.subject,
-        message: msg.message,
-      });
-      if (!error) return;
-    } catch {
-      // Fall through to Firebase
-    }
-  }
   if (!db) return;
   try {
     await addDoc(collection(db, 'contact_messages'), {
@@ -900,18 +539,6 @@ export async function insertContactMessage(msg: {
 }
 
 export async function getActiveReviews(): Promise<Review[]> {
-  if (isSupabaseConfigured && supabase) {
-    try {
-      const { data, error } = await supabase
-        .from('reviews')
-        .select('*')
-        .eq('active', true)
-        .order('created_at', { ascending: false });
-      if (!error && data) return data as Review[];
-    } catch {
-      // Fall through to Firebase
-    }
-  }
   if (!db) return [];
   try {
     const snap = await getDocs(
@@ -923,4 +550,42 @@ export async function getActiveReviews(): Promise<Review[]> {
   } catch {
     return [];
   }
+}
+
+// ============================================================
+// FILE UPLOAD (Firebase Storage)
+// ============================================================
+
+export type UploadedOrderFile = {
+  path: string;
+  url: string;
+};
+
+export async function uploadOrderFile(
+  file: File,
+  orderId: string,
+  itemId: string
+): Promise<UploadedOrderFile> {
+  if (!storage || !isFirebaseConfigured) {
+    throw new Error('File storage is not configured.');
+  }
+
+  const safeOrderId = orderId.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const safeItemId = itemId.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const path = `orders/${safeOrderId}/${safeItemId}-${safeName}`;
+  const fileRef = storageRef(storage, path);
+
+  await uploadBytes(fileRef, file, { contentType: file.type || undefined });
+
+  const url = await getDownloadURL(fileRef);
+
+  return { path, url };
+}
+
+export function getOrderFileUrl(filePathOrUrl: string): string | null {
+  if (!filePathOrUrl) return null;
+  if (/^https?:\/\//i.test(filePathOrUrl)) return filePathOrUrl;
+  if (!storage) return null;
+  return getDownloadURL(storageRef(storage, filePathOrUrl));
 }

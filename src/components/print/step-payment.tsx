@@ -26,7 +26,7 @@ import {
   type OrderItem,
 } from '@/lib/database';
 import { openWhatsAppBill } from '@/lib/whatsapp';
-import { uploadOrderFile } from '@/lib/storage';
+import { uploadOrderFile } from '@/lib/database';
 import { formatINR } from '@/lib/pricing';
 import { siteConfig, advancePercentage } from '@/lib/site-config';
 import { isValidWhatsAppPhone } from '@/lib/whatsapp';
@@ -52,7 +52,6 @@ export function StepPayment({ address, onBack }: Props) {
     selectedCourier,
     shippingMethods,
     clearCart,
-    totalWeightGrams,
   } = useCart();
 
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('advance');

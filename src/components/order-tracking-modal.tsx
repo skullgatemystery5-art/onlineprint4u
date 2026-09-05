@@ -282,7 +282,7 @@ export function OrderTrackingModal({ orderId, open, onClose }: Props) {
                       <span className="font-mono font-semibold">{order.tracking_id}</span>
                       <button
                         onClick={() => {
-                          navigator.clipboard?.writeText(order.tracking_id);
+                          if (order.tracking_id) navigator.clipboard?.writeText(order.tracking_id);
                         }}
                         className="text-muted-foreground hover:text-primary"
                       >

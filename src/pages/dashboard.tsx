@@ -3,7 +3,6 @@ import { Link, useNavigate } from 'react-router-dom';
 import {
   Package,
   MapPin,
-  LayoutDashboard,
   FileText,
   Truck,
   CheckCircle2,
@@ -14,7 +13,6 @@ import {
   Plus,
   Trash2,
   Edit2,
-  Star,
   TrendingUp,
   Wallet,
 } from 'lucide-react';
@@ -24,7 +22,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import {
@@ -34,7 +32,6 @@ import {
   updateAddress,
   deleteAddress,
   isFirebaseConfigured,
-  isSupabaseConfigured,
   type Order,
   type Address,
 } from '@/lib/database';
@@ -79,7 +76,7 @@ export default function DashboardPage() {
       navigate('/login?redirect=/dashboard');
       return;
     }
-    if (!isFirebaseConfigured && !isSupabaseConfigured) {
+    if (!isFirebaseConfigured) {
       setLoading(false);
       return;
     }

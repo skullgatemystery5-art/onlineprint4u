@@ -22,7 +22,7 @@ export function Header() {
   const [scrolled, setScrolled] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, profile, signOut, isAdmin } = useAuth();
+  const { user, signOut, isAdmin } = useAuth();
   const { items } = useCart();
 
   useEffect(() => {

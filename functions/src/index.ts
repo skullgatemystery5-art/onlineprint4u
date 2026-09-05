@@ -3,7 +3,7 @@ import * as admin from "firebase-admin";
 
 admin.initializeApp();
 
-const db = admin.firestore();
+
 
 interface OrderItem {
   fileName: string;
@@ -24,7 +24,7 @@ interface OrderItem {
 
 interface OrderData {
   order_number: string;
-  created_at?: any;
+  created_at?: unknown;
   shipping_name: string;
   shipping_phone: string;
   shipping_address: string;
@@ -101,26 +101,32 @@ function buildWhatsAppMessage(order: OrderData, timestamp: string): string {
 }
 
 async function sendEmail(to: string, subject: string, body: string): Promise<string> {
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) {
-    console.log("[MAIL] RESEND_API_KEY not set. Email body:\n" + body);
+  const smtpUser = process.env.SMTP_USER;
+  const smtpPass = process.env.SMTP_PASS;
+  if (!smtpUser || !smtpPass) {
+    console.log("[MAIL] SMTP_USER/SMTP_PASS not set. Email body:\n" + body);
     return "skipped";
   }
   try {
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        from: "Online Print 4U <orders@resend.onlineprint4u.in>",
-        to: [to],
-        subject,
-        text: body,
-      }),
+    const smtpHost = process.env.SMTP_HOST || "smtp.zoho.in";
+    const smtpPort = parseInt(process.env.SMTP_PORT || "465", 10);
+    const smtpFrom = process.env.SMTP_FROM || `Online Print 4U <${smtpUser}>`;
+
+    const nodemailer = await import("nodemailer");
+    const transporter = nodemailer.createTransport({
+      host: smtpHost,
+      port: smtpPort,
+      secure: smtpPort === 465,
+      auth: { user: smtpUser, pass: smtpPass },
     });
-    return res.ok ? "sent" : `failed:${res.status}`;
+
+    await transporter.sendMail({
+      from: smtpFrom,
+      to,
+      subject,
+      text: body,
+    });
+    return "sent";
   } catch (e) {
     return `error:${String(e)}`;
   }

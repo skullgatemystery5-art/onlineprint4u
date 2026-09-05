@@ -55,8 +55,8 @@ const indianStates = [
 
 export default function DeliveryDetailsPage() {
   const navigate = useNavigate();
-  const { user, profile, loading: authLoading } = useAuth();
-  const { items, totals, shippingRates, selectedCourier, setSelectedCourier, pincode, setPincode, estimatedDays } = useCart();
+  const { user, loading: authLoading } = useAuth();
+  const { items, totals, shippingRates, selectedCourier, setPincode } = useCart();
 
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
@@ -248,7 +248,6 @@ export default function DeliveryDetailsPage() {
     navigate('/checkout');
   };
 
-  const pincodeValid = pincode.length === 6 && /^\d{6}$/.test(pincode);
   const currentShippingRate = shippingRates.find((s) => s.courier_type === selectedCourier);
   const estimatedDate = currentShippingRate
     ? new Date(Date.now() + currentShippingRate.estimated_days * 24 * 60 * 60 * 1000).toLocaleDateString('en-IN', {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   ShoppingCart,
@@ -15,18 +15,14 @@ import { Header } from '@/components/header';
 import { Footer } from '@/components/footer';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { useCart } from '@/lib/cart-context';
-import { useAuth } from '@/lib/auth-context';
-import { getCouponByCode, type Coupon } from '@/lib/database';
+import { getCouponByCode } from '@/lib/database';
 import { formatINR } from '@/lib/pricing';
 import { formatWeight } from '@/lib/shipping';
-import { cn } from '@/lib/utils';
 
 export default function CartPage() {
   const navigate = useNavigate();
-  const { user } = useAuth();
   const {
     items,
     removeItem,
@@ -37,11 +33,7 @@ export default function CartPage() {
     setCouponCode,
     couponError,
     setCouponError,
-    shippingRates,
     selectedCourier,
-    setSelectedCourier,
-    pincode,
-    setPincode,
     totals,
     totalWeightGrams,
     shippingMethods,

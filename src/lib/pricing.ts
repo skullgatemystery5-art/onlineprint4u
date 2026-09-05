@@ -130,6 +130,7 @@ export function calculateCartTotal(
   items: OrderItem[],
   coupon: Coupon | null,
   shippingRate: ShippingRate | null,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   weightKg: number
 ): CartTotal {
   const subtotal = items.reduce((sum, i) => sum + i.price, 0);

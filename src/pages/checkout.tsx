@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -34,11 +34,10 @@ import {
   insertAddress,
   insertOrder,
   insertStatusLog,
-  type Order,
   type Address,
 } from '@/lib/database';
 import { openWhatsAppBill } from '@/lib/whatsapp';
-import { uploadOrderFile } from '@/lib/storage';
+import { uploadOrderFile } from '@/lib/database';
 import { formatINR } from '@/lib/pricing';
 import { siteConfig, advancePercentage } from '@/lib/site-config';
 import { isValidWhatsAppPhone } from '@/lib/whatsapp';
@@ -77,8 +76,8 @@ export default function CheckoutPage() {
   const [phoneInput, setPhoneInput] = useState('');
   const [otpInput, setOtpInput] = useState('');
   const [fullName, setFullName] = useState('');
-  const [emailInput, setEmailInput] = useState('');
-  const [otpSent, setOtpSent] = useState(false);
+  const [emailInput] = useState('');
+  const [, setOtpSent] = useState(false);
   const [otpTimer, setOtpTimer] = useState(0);
   const [authBusy, setAuthBusy] = useState(false);
 
