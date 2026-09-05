@@ -210,7 +210,6 @@ export default function LoginPage() {
           </Button>
         </form>
       )}
-      <div id="recaptcha-container"></div>
 
       {mode === 'phone' && step === 'otp' && (
         <form onSubmit={handleVerify} className="space-y-4 animate-fade-in">

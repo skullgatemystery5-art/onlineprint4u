@@ -316,7 +316,6 @@ export function HeaderAuthModal({ open, onClose, mode }: AuthModalProps) {
             </p>
           </div>
         )}
-        <div id="recaptcha-container"></div>
 
         {/* Phone mode — OTP step */}
         {method === 'phone' && step === 'otp' && (

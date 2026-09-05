@@ -15,6 +15,8 @@ import {
   ShieldCheck,
   Mail,
   Phone,
+  User,
+  Lock,
 } from 'lucide-react';
 import { Header } from '@/components/header';
 import { Footer } from '@/components/footer';
@@ -52,7 +54,7 @@ const RECAPTCHA_ID = 'print-recaptcha-container';
 
 export default function PrintPage() {
   const navigate = useNavigate();
-  const { user, profile, sendPhoneOtp, verifyPhoneOtp, sendEmailOtp, verifyEmailOtp, otpSending } = useAuth();
+  const { user, profile, sendPhoneOtp, verifyPhoneOtp, signInWithEmail, signUpWithEmail, otpSending } = useAuth();
   const { addItem, clearCart } = useCart();
   const [step, setStep] = useState(1);
   const [files, setFiles] = useState<UploadedFile[]>([]);
@@ -67,11 +69,14 @@ export default function PrintPage() {
     pincode: '',
   });
 
-  // Auth state (inline OTP for step 3 gate)
+  // Auth state (inline auth gate for step 3)
   const [authMethod, setAuthMethod] = useState<'phone' | 'email'>('phone');
   const [authStep, setAuthStep] = useState<'credentials' | 'otp' | 'done'>('credentials');
+  const [emailMode, setEmailMode] = useState<'signin' | 'signup'>('signin');
   const [phoneInput, setPhoneInput] = useState('');
   const [emailInput, setEmailInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
+  const [nameInput, setNameInput] = useState('');
   const [otpInput, setOtpInput] = useState('');
   const [otpTimer, setOtpTimer] = useState(0);
   const [authBusy, setAuthBusy] = useState(false);
@@ -136,6 +141,25 @@ export default function PrintPage() {
     setFiles(reordered);
   }, []);
 
+  // Dynamically inject reCAPTCHA container into document.body on mount
+  useEffect(() => {
+    let container = document.getElementById(RECAPTCHA_ID);
+    if (!container) {
+      container = document.createElement('div');
+      container.id = RECAPTCHA_ID;
+      container.style.position = 'fixed';
+      container.style.bottom = '12px';
+      container.style.left = '12px';
+      container.style.zIndex = '0';
+      document.body.appendChild(container);
+    }
+    return () => {
+      if (container && container.parentElement) {
+        container.parentElement.removeChild(container);
+      }
+    };
+  }, []);
+
   // Add files to cart and proceed to address step
   const proceedToAddress = () => {
     clearCart();
@@ -178,41 +202,26 @@ export default function PrintPage() {
     setAuthMethod(m);
     setAuthStep('credentials');
     setOtpInput('');
+    setPasswordInput('');
+    setNameInput('');
   };
 
   const handleSendOtp = async () => {
-    if (authMethod === 'email') {
-      if (!emailInput || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailInput)) {
-        toast.error('Please enter a valid email address.');
-        return;
-      }
-      setAuthBusy(true);
-      const { error } = await sendEmailOtp(emailInput);
-      setAuthBusy(false);
-      if (error) {
-        toast.error(error);
-        return;
-      }
-      setAuthStep('otp');
-      setOtpTimer(30);
-      toast.success('Verification code sent to your email.');
-    } else {
-      const cleaned = phoneInput.replace(/\D/g, '');
-      if (cleaned.length !== 10) {
-        toast.error('Enter a valid 10-digit mobile number.');
-        return;
-      }
-      setAuthBusy(true);
-      const { error } = await sendPhoneOtp(cleaned, RECAPTCHA_ID);
-      setAuthBusy(false);
-      if (error) {
-        toast.error(error);
-        return;
-      }
-      setAuthStep('otp');
-      setOtpTimer(30);
-      toast.success('OTP sent to +91 ' + cleaned);
+    const cleaned = phoneInput.replace(/\D/g, '');
+    if (cleaned.length !== 10) {
+      toast.error('Enter a valid 10-digit mobile number.');
+      return;
     }
+    setAuthBusy(true);
+    const { error } = await sendPhoneOtp(cleaned, RECAPTCHA_ID);
+    setAuthBusy(false);
+    if (error) {
+      toast.error(error);
+      return;
+    }
+    setAuthStep('otp');
+    setOtpTimer(30);
+    toast.success('OTP sent to +91 ' + cleaned);
   };
 
   const handleVerifyOtp = async () => {
@@ -221,10 +230,7 @@ export default function PrintPage() {
       return;
     }
     setAuthBusy(true);
-    const { error } =
-      authMethod === 'email'
-        ? await verifyEmailOtp(emailInput, otpInput)
-        : await verifyPhoneOtp(otpInput);
+    const { error } = await verifyPhoneOtp(otpInput);
     setAuthBusy(false);
     if (error) {
       toast.error(error);
@@ -232,6 +238,33 @@ export default function PrintPage() {
     }
     setAuthStep('done');
     toast.success('Login successful!');
+  };
+
+  const handleEmailAuth = async () => {
+    if (!emailInput || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailInput)) {
+      toast.error('Please enter a valid email address.');
+      return;
+    }
+    if (!passwordInput || passwordInput.length < 6) {
+      toast.error('Password must be at least 6 characters.');
+      return;
+    }
+    if (emailMode === 'signup' && !nameInput.trim()) {
+      toast.error('Please enter your name.');
+      return;
+    }
+    setAuthBusy(true);
+    const { error } =
+      emailMode === 'signin'
+        ? await signInWithEmail(emailInput, passwordInput)
+        : await signUpWithEmail(emailInput, passwordInput, nameInput);
+    setAuthBusy(false);
+    if (error) {
+      toast.error(error);
+      return;
+    }
+    setAuthStep('done');
+    toast.success(emailMode === 'signin' ? 'Login successful!' : 'Account created successfully!');
   };
 
   return (
@@ -519,7 +552,7 @@ export default function PrintPage() {
                     <h2 className="font-display text-lg font-bold">Login Required</h2>
                   </div>
                   <p className="mb-4 text-sm text-muted-foreground">
-                    Verify your phone or email to continue with the order.
+                    Verify your phone or sign in with email to continue with the order.
                   </p>
 
                   {/* Phone / Email tab switcher */}
@@ -531,7 +564,7 @@ export default function PrintPage() {
                         authMethod === 'phone' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
                       )}
                     >
-                      <Phone className="h-4 w-4" /> Phone
+                      <Phone className="h-4 w-4" /> Phone OTP
                     </button>
                     <button
                       onClick={() => switchAuthMethod('email')}
@@ -544,67 +577,48 @@ export default function PrintPage() {
                     </button>
                   </div>
 
-                  {authStep === 'credentials' && (
+                  {/* Phone auth flow */}
+                  {authMethod === 'phone' && authStep === 'credentials' && (
                     <div className="space-y-4">
-                      {authMethod === 'email' ? (
-                        <div className="space-y-2">
-                          <Label htmlFor="auth-email">Email Address</Label>
-                          <div className="relative">
-                            <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                            <Input
-                              id="auth-email"
-                              type="email"
-                              value={emailInput}
-                              onChange={(e) => setEmailInput(e.target.value)}
-                              placeholder="you@example.com"
-                              className="pl-10"
-                            />
-                          </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="auth-phone">Mobile Number</Label>
+                        <div className="flex items-center gap-2">
+                          <span className="flex h-10 items-center rounded-lg border border-border bg-muted/50 px-3 text-sm font-medium text-muted-foreground">
+                            +91
+                          </span>
+                          <Input
+                            id="auth-phone"
+                            value={phoneInput}
+                            onChange={(e) => setPhoneInput(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                            placeholder="10-digit mobile number"
+                            maxLength={10}
+                            className="flex-1"
+                          />
                         </div>
-                      ) : (
-                        <div className="space-y-2">
-                          <Label htmlFor="auth-phone">Mobile Number</Label>
-                          <div className="flex items-center gap-2">
-                            <span className="flex h-10 items-center rounded-lg border border-border bg-muted/50 px-3 text-sm font-medium text-muted-foreground">
-                              +91
-                            </span>
-                            <Input
-                              id="auth-phone"
-                              value={phoneInput}
-                              onChange={(e) => setPhoneInput(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                              placeholder="10-digit mobile number"
-                              maxLength={10}
-                              className="flex-1"
-                            />
-                          </div>
-                        </div>
-                      )}
+                      </div>
                       <Button
                         onClick={handleSendOtp}
-                        disabled={authBusy || otpSending || (authMethod === 'phone' ? phoneInput.length !== 10 : !emailInput)}
+                        disabled={authBusy || otpSending || phoneInput.length !== 10}
                         className="w-full gap-2"
                       >
                         {authBusy || otpSending ? (
                           <>
-                            <Loader2 className="h-4 w-4 animate-spin" /> Sending code...
+                            <Loader2 className="h-4 w-4 animate-spin" /> Sending OTP...
                           </>
                         ) : (
                           <>
-                            {authMethod === 'email' ? <Mail className="h-4 w-4" /> : <Smartphone className="h-4 w-4" />} Send Verification Code
+                            <Smartphone className="h-4 w-4" /> Send OTP
                           </>
                         )}
                       </Button>
                     </div>
                   )}
-                  git commit -m "Add recaptcha container"
 
-                  {authStep === 'otp' && (
+                  {authMethod === 'phone' && authStep === 'otp' && (
                     <div className="space-y-4">
                       <div className="rounded-lg bg-primary/5 p-3 text-sm text-muted-foreground">
                         Enter the 6-digit code sent to{' '}
-                        <span className="font-semibold text-foreground">
-                          {authMethod === 'email' ? emailInput : `+91 ${phoneInput}`}
-                        </span>
+                        <span className="font-semibold text-foreground">+91 {phoneInput}</span>
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="auth-otp">Enter OTP</Label>
@@ -625,14 +639,14 @@ export default function PrintPage() {
                           }}
                           className="text-sm text-muted-foreground hover:underline"
                         >
-                          {authMethod === 'email' ? 'Change email' : 'Change number'}
+                          Change number
                         </button>
                         <button
                           onClick={otpTimer === 0 ? handleSendOtp : undefined}
                           disabled={otpTimer > 0 || otpSending}
                           className="text-sm text-primary hover:underline disabled:opacity-50"
                         >
-                          {otpTimer > 0 ? `Resend in ${otpTimer}s` : 'Resend code'}
+                          {otpTimer > 0 ? `Resend in ${otpTimer}s` : 'Resend OTP'}
                         </button>
                       </div>
                       <Button
@@ -653,7 +667,118 @@ export default function PrintPage() {
                     </div>
                   )}
 
-                  <div id={RECAPTCHA_ID} className="mt-2 min-h-[1px]" />
+                  {/* Email auth flow */}
+                  {authMethod === 'email' && authStep === 'credentials' && (
+                    <div className="space-y-4">
+                      {/* Sign in / Sign up toggle */}
+                      <div className="mb-2 flex items-center gap-1 rounded-xl bg-muted p-1">
+                        <button
+                          onClick={() => setEmailMode('signin')}
+                          className={cn(
+                            'flex-1 rounded-lg py-2 text-sm font-medium transition-colors',
+                            emailMode === 'signin' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                          )}
+                        >
+                          Sign In
+                        </button>
+                        <button
+                          onClick={() => setEmailMode('signup')}
+                          className={cn(
+                            'flex-1 rounded-lg py-2 text-sm font-medium transition-colors',
+                            emailMode === 'signup' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                          )}
+                        >
+                          Create Account
+                        </button>
+                      </div>
+
+                      {emailMode === 'signup' && (
+                        <div className="space-y-2">
+                          <Label htmlFor="auth-name">Full Name</Label>
+                          <div className="relative">
+                            <User className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                            <Input
+                              id="auth-name"
+                              value={nameInput}
+                              onChange={(e) => setNameInput(e.target.value)}
+                              placeholder="Your name"
+                              className="pl-10"
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="space-y-2">
+                        <Label htmlFor="auth-email">Email Address</Label>
+                        <div className="relative">
+                          <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                          <Input
+                            id="auth-email"
+                            type="email"
+                            value={emailInput}
+                            onChange={(e) => setEmailInput(e.target.value)}
+                            placeholder="you@example.com"
+                            className="pl-10"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="auth-password">Password</Label>
+                        <div className="relative">
+                          <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                          <Input
+                            id="auth-password"
+                            type="password"
+                            value={passwordInput}
+                            onChange={(e) => setPasswordInput(e.target.value)}
+                            placeholder={emailMode === 'signin' ? 'Your password' : 'Choose a password (min 6 chars)'}
+                            className="pl-10"
+                          />
+                        </div>
+                      </div>
+
+                      <Button
+                        onClick={handleEmailAuth}
+                        disabled={authBusy || !emailInput || !passwordInput}
+                        className="w-full gap-2"
+                      >
+                        {authBusy ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" /> Please wait...
+                          </>
+                        ) : (
+                          <>
+                            {emailMode === 'signin' ? <Mail className="h-4 w-4" /> : <User className="h-4 w-4" />}
+                            {emailMode === 'signin' ? 'Sign In' : 'Create Account'}
+                          </>
+                        )}
+                      </Button>
+
+                      {emailMode === 'signin' && (
+                        <p className="text-center text-xs text-muted-foreground">
+                          Don&apos;t have an account?{' '}
+                          <button
+                            onClick={() => setEmailMode('signup')}
+                            className="font-medium text-primary hover:underline"
+                          >
+                            Create one
+                          </button>
+                        </p>
+                      )}
+                      {emailMode === 'signup' && (
+                        <p className="text-center text-xs text-muted-foreground">
+                          Already have an account?{' '}
+                          <button
+                            onClick={() => setEmailMode('signin')}
+                            className="font-medium text-primary hover:underline"
+                          >
+                            Sign in
+                          </button>
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 
