@@ -15,8 +15,8 @@ import {
   ShieldCheck,
   Mail,
   Phone,
-  User,
-  Lock,
+  Timer,
+  MailCheck,
 } from 'lucide-react';
 import { Header } from '@/components/header';
 import { Footer } from '@/components/footer';
@@ -54,29 +54,18 @@ const RECAPTCHA_ID = 'print-recaptcha-container';
 
 export default function PrintPage() {
   const navigate = useNavigate();
-  const { user, profile, sendPhoneOtp, verifyPhoneOtp, signInWithEmail, signUpWithEmail, otpSending } = useAuth();
+  const { user, profile, sendPhoneOtp, verifyPhoneOtp, sendEmailOtp, otpSending } = useAuth();
   const { addItem, clearCart } = useCart();
   const [step, setStep] = useState(1);
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [addressData, setAddressData] = useState<AddressData>({
-    name: '',
-    phone: '',
-    email: '',
-    line1: '',
-    line2: '',
-    city: '',
-    state: '',
-    pincode: '',
+    name: '', phone: '', email: '', line1: '', line2: '', city: '', state: '', pincode: '',
   });
 
-  // Auth state (inline auth gate for step 3)
   const [authMethod, setAuthMethod] = useState<'phone' | 'email'>('phone');
-  const [authStep, setAuthStep] = useState<'credentials' | 'otp' | 'done'>('credentials');
-  const [emailMode, setEmailMode] = useState<'signin' | 'signup'>('signin');
+  const [authStep, setAuthStep] = useState<'input' | 'otp' | 'email-sent'>('input');
   const [phoneInput, setPhoneInput] = useState('');
   const [emailInput, setEmailInput] = useState('');
-  const [passwordInput, setPasswordInput] = useState('');
-  const [nameInput, setNameInput] = useState('');
   const [otpInput, setOtpInput] = useState('');
   const [otpTimer, setOtpTimer] = useState(0);
   const [authBusy, setAuthBusy] = useState(false);
@@ -99,19 +88,10 @@ export default function PrintPage() {
       return { printingCost: 0, bindingCost: 0, photoCost: 0, laminationCost: 0, itemTotal: 0, perPageRate: 0, totalPages: 0 };
     }
     const mockItem = {
-      id: 'preview',
-      fileName: 'preview',
-      fileType: 'pdf',
-      fileSize: 0,
-      pages: totalPages,
-      copies: options.copies,
-      printType: options.printType,
-      side: options.side,
-      orientation: options.orientation,
-      paperGsm: options.paperGsm,
-      binding: options.binding,
-      lamination: options.lamination,
-      premiumPhoto: options.premiumPhoto,
+      id: 'preview', fileName: 'preview', fileType: 'pdf', fileSize: 0,
+      pages: totalPages, copies: options.copies, printType: options.printType,
+      side: options.side, orientation: options.orientation, paperGsm: options.paperGsm,
+      binding: options.binding, lamination: options.lamination, premiumPhoto: options.premiumPhoto,
       notes: options.notes,
     };
     const { printingCost, bindingCost, photoCost, laminationCost, itemTotal } = calculateItemPriceLocal(mockItem);
@@ -122,8 +102,7 @@ export default function PrintPage() {
       photoCost: Math.round(photoCost * 100) / 100,
       laminationCost: Math.round(laminationCost * 100) / 100,
       itemTotal: Math.round(itemTotal * 100) / 100,
-      perPageRate,
-      totalPages,
+      perPageRate, totalPages,
     };
   }, [files, options]);
 
@@ -141,15 +120,14 @@ export default function PrintPage() {
     setFiles(reordered);
   }, []);
 
-  // Dynamically inject reCAPTCHA container into document.body on mount
   useEffect(() => {
     let container = document.getElementById(RECAPTCHA_ID);
     if (!container) {
       container = document.createElement('div');
       container.id = RECAPTCHA_ID;
       container.style.position = 'fixed';
-      container.style.bottom = '12px';
-      container.style.left = '12px';
+      container.style.bottom = '0';
+      container.style.left = '0';
       container.style.zIndex = '0';
       document.body.appendChild(container);
     }
@@ -160,37 +138,23 @@ export default function PrintPage() {
     };
   }, []);
 
-  // Add files to cart and proceed to address step
   const proceedToAddress = () => {
     clearCart();
     files.forEach((file) => {
       const fileItem = {
-        id: file.id,
-        fileName: file.name,
-        fileType: file.type,
-        fileSize: file.size,
-        pages: file.pages,
-        copies: options.copies,
-        printType: options.printType,
-        side: options.side,
-        orientation: options.orientation,
-        paperGsm: options.paperGsm,
-        binding: options.binding,
-        lamination: options.lamination,
-        premiumPhoto: options.premiumPhoto,
+        id: file.id, fileName: file.name, fileType: file.type, fileSize: file.size,
+        pages: file.pages, copies: options.copies, printType: options.printType,
+        side: options.side, orientation: options.orientation, paperGsm: options.paperGsm,
+        binding: options.binding, lamination: options.lamination, premiumPhoto: options.premiumPhoto,
         notes: options.notes,
       };
       const { itemTotal: fileTotal } = calculateItemPriceLocal(fileItem);
-      const item: OrderItem = {
-        ...fileItem,
-        price: Math.round(fileTotal * 100) / 100,
-      };
+      const item: OrderItem = { ...fileItem, price: Math.round(fileTotal * 100) / 100 };
       addItem(item, file.file);
     });
     setStep(3);
   };
 
-  // OTP timer
   useEffect(() => {
     if (otpTimer > 0) {
       const t = setTimeout(() => setOtpTimer(otpTimer - 1), 1000);
@@ -200,10 +164,8 @@ export default function PrintPage() {
 
   const switchAuthMethod = (m: 'phone' | 'email') => {
     setAuthMethod(m);
-    setAuthStep('credentials');
+    setAuthStep('input');
     setOtpInput('');
-    setPasswordInput('');
-    setNameInput('');
   };
 
   const handleSendOtp = async () => {
@@ -236,35 +198,24 @@ export default function PrintPage() {
       toast.error(error);
       return;
     }
-    setAuthStep('done');
+    setAuthStep('input');
     toast.success('Login successful!');
   };
 
-  const handleEmailAuth = async () => {
+  const handleSendEmailLink = async () => {
     if (!emailInput || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailInput)) {
       toast.error('Please enter a valid email address.');
       return;
     }
-    if (!passwordInput || passwordInput.length < 6) {
-      toast.error('Password must be at least 6 characters.');
-      return;
-    }
-    if (emailMode === 'signup' && !nameInput.trim()) {
-      toast.error('Please enter your name.');
-      return;
-    }
     setAuthBusy(true);
-    const { error } =
-      emailMode === 'signin'
-        ? await signInWithEmail(emailInput, passwordInput)
-        : await signUpWithEmail(emailInput, passwordInput, nameInput);
+    const { error } = await sendEmailOtp(emailInput);
     setAuthBusy(false);
     if (error) {
       toast.error(error);
       return;
     }
-    setAuthStep('done');
-    toast.success(emailMode === 'signin' ? 'Login successful!' : 'Account created successfully!');
+    setAuthStep('email-sent');
+    toast.success('Sign-in link sent to your email.');
   };
 
   return (
@@ -334,7 +285,6 @@ export default function PrintPage() {
                 </p>
 
                 <div className="space-y-6">
-                  {/* Print Type */}
                   <div>
                     <Label className="mb-2 block">Print Type</Label>
                     <div className="grid grid-cols-2 gap-3">
@@ -357,7 +307,6 @@ export default function PrintPage() {
                     </div>
                   </div>
 
-                  {/* Side */}
                   <div>
                     <Label className="mb-2 block">Print Side</Label>
                     <div className="grid grid-cols-2 gap-3">
@@ -380,7 +329,6 @@ export default function PrintPage() {
                     </div>
                   </div>
 
-                  {/* Print Orientation */}
                   <div>
                     <Label className="mb-2 block">Print Orientation</Label>
                     <div className="grid grid-cols-2 gap-3">
@@ -403,7 +351,6 @@ export default function PrintPage() {
                     </div>
                   </div>
 
-                  {/* Copies + GSM */}
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div>
                       <Label className="mb-2 block">Copies</Label>
@@ -436,7 +383,6 @@ export default function PrintPage() {
                     </div>
                   </div>
 
-                  {/* Binding */}
                   <div>
                     <Label className="mb-2 block">Binding</Label>
                     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -456,7 +402,6 @@ export default function PrintPage() {
                     </div>
                   </div>
 
-                  {/* Lamination */}
                   <div>
                     <Label className="mb-2 block">Lamination</Label>
                     <div className="grid grid-cols-2 gap-3">
@@ -478,7 +423,6 @@ export default function PrintPage() {
                     </div>
                   </div>
 
-                  {/* Premium Photo */}
                   <div>
                     <Label className="mb-2 block">Premium Photo Prints</Label>
                     <div className="grid grid-cols-2 gap-3">
@@ -501,7 +445,6 @@ export default function PrintPage() {
                     </div>
                   </div>
 
-                  {/* Notes */}
                   <div>
                     <Label className="mb-2 block">Custom Notes (optional)</Label>
                     <Textarea
@@ -514,7 +457,6 @@ export default function PrintPage() {
                 </div>
               </div>
 
-              {/* Live Price Card */}
               <div className="sticky bottom-4 z-10 rounded-2xl border border-primary/20 bg-card p-5 shadow-glow">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -542,7 +484,6 @@ export default function PrintPage() {
           {/* Step 3: Address (with inline auth gate) */}
           {step === 3 && (
             <div className="animate-fade-in space-y-6">
-              {/* Auth gate — shown if not logged in */}
               {!user && (
                 <div className="rounded-3xl border-2 border-primary bg-card p-6 shadow-sm">
                   <div className="mb-4 flex items-center gap-3">
@@ -552,10 +493,9 @@ export default function PrintPage() {
                     <h2 className="font-display text-lg font-bold">Login Required</h2>
                   </div>
                   <p className="mb-4 text-sm text-muted-foreground">
-                    Verify your phone or sign in with email to continue with the order.
+                    Enter your phone number or email to receive a verification code.
                   </p>
 
-                  {/* Phone / Email tab switcher */}
                   <div className="mb-4 grid grid-cols-2 gap-1 rounded-xl bg-muted p-1">
                     <button
                       onClick={() => switchAuthMethod('phone')}
@@ -564,7 +504,7 @@ export default function PrintPage() {
                         authMethod === 'phone' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
                       )}
                     >
-                      <Phone className="h-4 w-4" /> Phone OTP
+                      <Phone className="h-4 w-4" /> Phone
                     </button>
                     <button
                       onClick={() => switchAuthMethod('email')}
@@ -577,8 +517,7 @@ export default function PrintPage() {
                     </button>
                   </div>
 
-                  {/* Phone auth flow */}
-                  {authMethod === 'phone' && authStep === 'credentials' && (
+                  {authMethod === 'phone' && authStep === 'input' && (
                     <div className="space-y-4">
                       <div className="space-y-2">
                         <Label htmlFor="auth-phone">Mobile Number</Label>
@@ -602,13 +541,9 @@ export default function PrintPage() {
                         className="w-full gap-2"
                       >
                         {authBusy || otpSending ? (
-                          <>
-                            <Loader2 className="h-4 w-4 animate-spin" /> Sending OTP...
-                          </>
+                          <><Loader2 className="h-4 w-4 animate-spin" /> Sending OTP...</>
                         ) : (
-                          <>
-                            <Smartphone className="h-4 w-4" /> Send OTP
-                          </>
+                          <><Smartphone className="h-4 w-4" /> Send OTP</>
                         )}
                       </Button>
                     </div>
@@ -633,10 +568,7 @@ export default function PrintPage() {
                       </div>
                       <div className="flex items-center justify-between">
                         <button
-                          onClick={() => {
-                            setAuthStep('credentials');
-                            setOtpInput('');
-                          }}
+                          onClick={() => { setAuthStep('input'); setOtpInput(''); }}
                           className="text-sm text-muted-foreground hover:underline"
                         >
                           Change number
@@ -655,59 +587,16 @@ export default function PrintPage() {
                         className="w-full gap-2"
                       >
                         {authBusy ? (
-                          <>
-                            <Loader2 className="h-4 w-4 animate-spin" /> Verifying...
-                          </>
+                          <><Loader2 className="h-4 w-4 animate-spin" /> Verifying...</>
                         ) : (
-                          <>
-                            <Check className="h-4 w-4" /> Verify & Login
-                          </>
+                          <><Check className="h-4 w-4" /> Verify &amp; Login</>
                         )}
                       </Button>
                     </div>
                   )}
 
-                  {/* Email auth flow */}
-                  {authMethod === 'email' && authStep === 'credentials' && (
+                  {authMethod === 'email' && authStep === 'input' && (
                     <div className="space-y-4">
-                      {/* Sign in / Sign up toggle */}
-                      <div className="mb-2 flex items-center gap-1 rounded-xl bg-muted p-1">
-                        <button
-                          onClick={() => setEmailMode('signin')}
-                          className={cn(
-                            'flex-1 rounded-lg py-2 text-sm font-medium transition-colors',
-                            emailMode === 'signin' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-                          )}
-                        >
-                          Sign In
-                        </button>
-                        <button
-                          onClick={() => setEmailMode('signup')}
-                          className={cn(
-                            'flex-1 rounded-lg py-2 text-sm font-medium transition-colors',
-                            emailMode === 'signup' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-                          )}
-                        >
-                          Create Account
-                        </button>
-                      </div>
-
-                      {emailMode === 'signup' && (
-                        <div className="space-y-2">
-                          <Label htmlFor="auth-name">Full Name</Label>
-                          <div className="relative">
-                            <User className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                            <Input
-                              id="auth-name"
-                              value={nameInput}
-                              onChange={(e) => setNameInput(e.target.value)}
-                              placeholder="Your name"
-                              className="pl-10"
-                            />
-                          </div>
-                        </div>
-                      )}
-
                       <div className="space-y-2">
                         <Label htmlFor="auth-email">Email Address</Label>
                         <div className="relative">
@@ -722,67 +611,38 @@ export default function PrintPage() {
                           />
                         </div>
                       </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="auth-password">Password</Label>
-                        <div className="relative">
-                          <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                          <Input
-                            id="auth-password"
-                            type="password"
-                            value={passwordInput}
-                            onChange={(e) => setPasswordInput(e.target.value)}
-                            placeholder={emailMode === 'signin' ? 'Your password' : 'Choose a password (min 6 chars)'}
-                            className="pl-10"
-                          />
-                        </div>
-                      </div>
-
                       <Button
-                        onClick={handleEmailAuth}
-                        disabled={authBusy || !emailInput || !passwordInput}
+                        onClick={handleSendEmailLink}
+                        disabled={authBusy || otpSending || !emailInput}
                         className="w-full gap-2"
                       >
-                        {authBusy ? (
-                          <>
-                            <Loader2 className="h-4 w-4 animate-spin" /> Please wait...
-                          </>
+                        {authBusy || otpSending ? (
+                          <><Loader2 className="h-4 w-4 animate-spin" /> Sending link...</>
                         ) : (
-                          <>
-                            {emailMode === 'signin' ? <Mail className="h-4 w-4" /> : <User className="h-4 w-4" />}
-                            {emailMode === 'signin' ? 'Sign In' : 'Create Account'}
-                          </>
+                          <><Mail className="h-4 w-4" /> Send Sign-In Link</>
                         )}
                       </Button>
+                    </div>
+                  )}
 
-                      {emailMode === 'signin' && (
-                        <p className="text-center text-xs text-muted-foreground">
-                          Don&apos;t have an account?{' '}
-                          <button
-                            onClick={() => setEmailMode('signup')}
-                            className="font-medium text-primary hover:underline"
-                          >
-                            Create one
-                          </button>
-                        </p>
-                      )}
-                      {emailMode === 'signup' && (
-                        <p className="text-center text-xs text-muted-foreground">
-                          Already have an account?{' '}
-                          <button
-                            onClick={() => setEmailMode('signin')}
-                            className="font-medium text-primary hover:underline"
-                          >
-                            Sign in
-                          </button>
-                        </p>
-                      )}
+                  {authMethod === 'email' && authStep === 'email-sent' && (
+                    <div className="space-y-4 text-center">
+                      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10">
+                        <MailCheck className="h-7 w-7 text-emerald-600" />
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        We sent a sign-in link to{' '}
+                        <span className="font-semibold text-foreground">{emailInput}</span>.
+                        Click the link in your email to sign in.
+                      </p>
+                      <Button variant="outline" className="w-full gap-2" onClick={() => setAuthStep('input')}>
+                        <ArrowLeft className="h-4 w-4" /> Use a different email
+                      </Button>
                     </div>
                   )}
                 </div>
               )}
 
-              {/* Logged-in confirmation */}
               {user && (
                 <div className="flex items-center gap-3 rounded-2xl bg-emerald-500/10 p-4">
                   <ShieldCheck className="h-5 w-5 text-emerald-600" />
@@ -795,7 +655,6 @@ export default function PrintPage() {
                 </div>
               )}
 
-              {/* Address form — always shown, fresh for every order */}
               <StepAddress
                 initial={addressData}
                 onBack={() => setStep(2)}
@@ -807,12 +666,10 @@ export default function PrintPage() {
             </div>
           )}
 
-          {/* Step 4: Shipping + Coupon */}
           {step === 4 && (
             <StepShipping onBack={() => setStep(3)} onNext={() => setStep(5)} />
           )}
 
-          {/* Step 5: Final Checkout + Payment */}
           {step === 5 && (
             <StepPayment address={addressData} onBack={() => setStep(4)} />
           )}

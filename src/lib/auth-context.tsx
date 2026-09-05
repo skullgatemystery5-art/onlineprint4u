@@ -13,9 +13,10 @@ import {
   onAuthStateChanged,
   signOut as firebaseSignOut,
   signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
   sendPasswordResetEmail,
-  updateProfile as updateFbProfile,
+  sendSignInLinkToEmail,
+  isSignInWithEmailLink,
+  signInWithEmailLink,
 } from 'firebase/auth';
 import { firebaseAuth } from './firebase';
 
@@ -38,8 +39,8 @@ type AuthContextType = {
   refreshProfile: () => Promise<void>;
   sendPhoneOtp: (phone: string, recaptchaContainerId: string) => Promise<SendOtpResult>;
   verifyPhoneOtp: (otp: string) => Promise<{ error: string | null }>;
-  signInWithEmail: (email: string, password: string) => Promise<{ error: string | null }>;
-  signUpWithEmail: (email: string, password: string, name: string) => Promise<{ error: string | null }>;
+  sendEmailOtp: (email: string) => Promise<SendOtpResult>;
+  verifyEmailOtp: (email: string, url: string) => Promise<{ error: string | null }>;
   adminLogin: (email: string, password: string) => Promise<{ error: string | null }>;
   adminResetPassword: (email: string) => Promise<{ error: string | null }>;
 };
@@ -54,8 +55,8 @@ const AuthContext = createContext<AuthContextType>({
   refreshProfile: async () => {},
   sendPhoneOtp: async () => ({ error: 'Not initialized' }),
   verifyPhoneOtp: async () => ({ error: 'Not initialized' }),
-  signInWithEmail: async () => ({ error: 'Not initialized' }),
-  signUpWithEmail: async () => ({ error: 'Not initialized' }),
+  sendEmailOtp: async () => ({ error: 'Not initialized' }),
+  verifyEmailOtp: async () => ({ error: 'Not initialized' }),
   adminLogin: async () => ({ error: 'Not initialized' }),
   adminResetPassword: async () => ({ error: 'Not initialized' }),
 });
@@ -68,6 +69,8 @@ function toAuthUser(fbUser: FirebaseUser): AuthUser {
     displayName: fbUser.displayName,
   };
 }
+
+const EMAIL_LINK_KEY = 'emailForSignIn';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -131,6 +134,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [fetchProfile]);
 
+  // Handle email link sign-in redirect on mount
+  useEffect(() => {
+    if (!isFirebaseConfigured || !firebaseAuth) return;
+    if (isSignInWithEmailLink(firebaseAuth, window.location.href)) {
+      let email = '';
+      try {
+        email = window.localStorage.getItem(EMAIL_LINK_KEY) || '';
+      } catch {
+        // ignore
+      }
+      if (!email) {
+        return;
+      }
+      signInWithEmailLink(firebaseAuth, email, window.location.href)
+        .then(async (result) => {
+          try {
+            window.localStorage.removeItem(EMAIL_LINK_KEY);
+          } catch {
+            // ignore
+          }
+          if (result.user) {
+            const authUser = toAuthUser(result.user);
+            setUser(authUser);
+            await upsertProfile({
+              id: authUser.uid,
+              email: authUser.email ?? email,
+              full_name: authUser.displayName ?? '',
+              phone: authUser.phoneNumber ?? '',
+              role: 'user',
+            });
+            await fetchProfile(authUser.uid);
+          }
+          window.history.replaceState({}, document.title, window.location.pathname);
+        })
+        .catch(() => {
+          // ignore — link may be expired or already used
+        });
+    }
+  }, [fetchProfile]);
+
   const sendPhoneOtp = useCallback(
     async (phone: string, recaptchaContainerId: string): Promise<SendOtpResult> => {
       if (!isFirebaseConfigured || !firebaseAuth) {
@@ -150,7 +193,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await new Promise((r) => setTimeout(r, 50));
 
         const verifier = new RecaptchaVerifier(firebaseAuth, recaptchaContainerId, {
-          size: 'normal',
+          size: 'invisible',
           'expired-callback': () => {
             clearRecaptcha();
           },
@@ -254,18 +297,58 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [confirmationResult, fetchProfile, clearRecaptcha]
   );
 
-  const signInWithEmail = useCallback(
-    async (email: string, password: string): Promise<{ error: string | null }> => {
+  const sendEmailOtp = useCallback(
+    async (email: string): Promise<SendOtpResult> => {
+      if (!isFirebaseConfigured || !firebaseAuth) {
+        return { error: 'Email login is not configured. Please contact support.' };
+      }
+      const actionCodeSettings = {
+        url: window.location.origin + '/login',
+        handleCodeInApp: true,
+      };
+      setOtpSending(true);
+      try {
+        try {
+          window.localStorage.setItem(EMAIL_LINK_KEY, email.trim());
+        } catch {
+          // ignore
+        }
+        await sendSignInLinkToEmail(firebaseAuth, email.trim(), actionCodeSettings);
+        return { error: null };
+      } catch (err) {
+        const error = err as { code?: string; message?: string };
+        if (error.code === 'auth/invalid-email') {
+          return { error: 'Please enter a valid email address.' };
+        }
+        if (error.code === 'auth/operation-not-allowed') {
+          return { error: 'Email link login is not enabled. Please contact support.' };
+        }
+        if (error.code === 'auth/too-many-requests') {
+          return {
+            error: 'Too many requests. Please wait before trying again.',
+            cooldownSec: 60,
+          };
+        }
+        const msg = error.message ?? 'Failed to send sign-in link.';
+        return { error: msg };
+      } finally {
+        setOtpSending(false);
+      }
+    },
+    []
+  );
+
+  const verifyEmailOtp = useCallback(
+    async (email: string, url: string): Promise<{ error: string | null }> => {
       if (!isFirebaseConfigured || !firebaseAuth) {
         return { error: 'Email login is not configured. Please contact support.' };
       }
       try {
-        const userCred = await signInWithEmailAndPassword(firebaseAuth, email.trim(), password);
-        if (!userCred.user) {
-          return { error: 'Login failed. No user returned.' };
+        const result = await signInWithEmailLink(firebaseAuth, email.trim(), url);
+        if (!result.user) {
+          return { error: 'Sign-in failed — no user returned.' };
         }
-
-        const authUser = toAuthUser(userCred.user);
+        const authUser = toAuthUser(result.user);
         setUser(authUser);
 
         await upsertProfile({
@@ -277,69 +360,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         });
 
         await fetchProfile(authUser.uid);
+
+        try {
+          window.localStorage.removeItem(EMAIL_LINK_KEY);
+        } catch {
+          // ignore
+        }
         return { error: null };
       } catch (err) {
         const error = err as { code?: string; message?: string };
-        if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found') {
-          return { error: 'Invalid email or password.' };
+        if (error.code === 'auth/invalid-action-code') {
+          return { error: 'This sign-in link is invalid or has expired. Please request a new one.' };
         }
-        if (error.code === 'auth/too-many-requests') {
-          return { error: 'Too many failed attempts. Please try again later.' };
-        }
-        if (error.code === 'auth/invalid-email') {
-          return { error: 'Please enter a valid email address.' };
-        }
-        const msg = error.message ?? 'Login failed. Please try again.';
-        return { error: msg };
-      }
-    },
-    [fetchProfile]
-  );
-
-  const signUpWithEmail = useCallback(
-    async (email: string, password: string, name: string): Promise<{ error: string | null }> => {
-      if (!isFirebaseConfigured || !firebaseAuth) {
-        return { error: 'Email sign-up is not configured. Please contact support.' };
-      }
-      try {
-        const userCred = await createUserWithEmailAndPassword(firebaseAuth, email.trim(), password);
-        if (!userCred.user) {
-          return { error: 'Sign-up failed. No user returned.' };
-        }
-
-        if (name.trim()) {
-          await updateFbProfile(userCred.user, { displayName: name.trim() });
-        }
-
-        const authUser = toAuthUser(userCred.user);
-        setUser(authUser);
-
-        await upsertProfile({
-          id: authUser.uid,
-          email: authUser.email ?? email.trim(),
-          full_name: name.trim(),
-          phone: authUser.phoneNumber ?? '',
-          role: 'user',
-        });
-
-        await fetchProfile(authUser.uid);
-        return { error: null };
-      } catch (err) {
-        const error = err as { code?: string; message?: string };
-        if (error.code === 'auth/email-already-in-use') {
-          return { error: 'An account with this email already exists. Please sign in instead.' };
-        }
-        if (error.code === 'auth/weak-password') {
-          return { error: 'Password should be at least 6 characters.' };
+        if (error.code === 'auth/expired-action-code') {
+          return { error: 'This sign-in link has expired. Please request a new one.' };
         }
         if (error.code === 'auth/invalid-email') {
-          return { error: 'Please enter a valid email address.' };
+          return { error: 'The email does not match the one the link was sent to.' };
         }
-        if (error.code === 'auth/operation-not-allowed') {
-          return { error: 'Email sign-up is not enabled. Please contact support.' };
-        }
-        const msg = error.message ?? 'Sign-up failed. Please try again.';
-        return { error: msg };
+        return { error: error.message || 'Sign-in failed. Please try again.' };
       }
     },
     [fetchProfile]
@@ -435,8 +474,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         refreshProfile,
         sendPhoneOtp,
         verifyPhoneOtp,
-        signInWithEmail,
-        signUpWithEmail,
+        sendEmailOtp,
+        verifyEmailOtp,
         adminLogin,
         adminResetPassword,
       }}

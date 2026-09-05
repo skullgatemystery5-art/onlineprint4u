@@ -19,6 +19,10 @@ import {
   MessageCircle,
   Weight,
   Lock,
+  Mail,
+  Phone,
+  Timer,
+  MailCheck,
 } from 'lucide-react';
 import { Header } from '@/components/header';
 import { Footer } from '@/components/footer';
@@ -52,7 +56,7 @@ type CheckoutSection = 'auth' | 'address' | 'delivery' | 'payment' | 'review';
 
 export default function CheckoutPage() {
   const navigate = useNavigate();
-  const { user, profile, sendPhoneOtp, verifyPhoneOtp } = useAuth();
+  const { user, profile, sendPhoneOtp, verifyPhoneOtp, sendEmailOtp, otpSending } = useAuth();
   const {
     items,
     fileObjects,
@@ -71,13 +75,13 @@ export default function CheckoutPage() {
 
   const [showPolicy, setShowPolicy] = useState(false);
 
-  // --- Auth state (embedded phone OTP) ---
-  const [authStep, setAuthStep] = useState<'phone' | 'otp' | 'done'>('phone');
+  // --- Auth state (unified phone/email OTP) ---
+  const [authMethod, setAuthMethod] = useState<'phone' | 'email'>('phone');
+  const [authStep, setAuthStep] = useState<'input' | 'otp' | 'email-sent' | 'done'>('input');
   const [phoneInput, setPhoneInput] = useState('');
+  const [emailInput, setEmailInput] = useState('');
   const [otpInput, setOtpInput] = useState('');
   const [fullName, setFullName] = useState('');
-  const [emailInput] = useState('');
-  const [, setOtpSent] = useState(false);
   const [otpTimer, setOtpTimer] = useState(0);
   const [authBusy, setAuthBusy] = useState(false);
 
@@ -181,7 +185,13 @@ export default function CheckoutPage() {
     review: null,
   };
 
-  // --- Phone OTP handlers ---
+  // --- Unified OTP handlers ---
+  const switchAuthMethod = (m: 'phone' | 'email') => {
+    setAuthMethod(m);
+    setAuthStep('input');
+    setOtpInput('');
+  };
+
   const handleSendOtp = async () => {
     const cleaned = phoneInput.replace(/\D/g, '');
     if (cleaned.length !== 10) {
@@ -195,7 +205,6 @@ export default function CheckoutPage() {
       toast.error(error);
       return;
     }
-    setOtpSent(true);
     setAuthStep('otp');
     setOtpTimer(30);
     toast.success('OTP sent to +91 ' + cleaned);
@@ -215,6 +224,22 @@ export default function CheckoutPage() {
     }
     setAuthStep('done');
     toast.success('Login successful!');
+  };
+
+  const handleSendEmailLink = async () => {
+    if (!emailInput || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailInput)) {
+      toast.error('Please enter a valid email address.');
+      return;
+    }
+    setAuthBusy(true);
+    const { error } = await sendEmailOtp(emailInput);
+    setAuthBusy(false);
+    if (error) {
+      toast.error(error);
+      return;
+    }
+    setAuthStep('email-sent');
+    toast.success('Sign-in link sent to your email.');
   };
 
   // --- Razorpay payment handler ---
@@ -470,7 +495,30 @@ export default function CheckoutPage() {
 
               {!user && (
                 <div className="space-y-4">
-                  {authStep === 'phone' && (
+                  {/* Method switcher */}
+                  <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted p-1">
+                    <button
+                      onClick={() => switchAuthMethod('phone')}
+                      className={cn(
+                        'flex items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-medium transition-colors',
+                        authMethod === 'phone' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                      )}
+                    >
+                      <Phone className="h-4 w-4" /> Phone
+                    </button>
+                    <button
+                      onClick={() => switchAuthMethod('email')}
+                      className={cn(
+                        'flex items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-medium transition-colors',
+                        authMethod === 'email' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                      )}
+                    >
+                      <Mail className="h-4 w-4" /> Email
+                    </button>
+                  </div>
+
+                  {/* Phone: input */}
+                  {authMethod === 'phone' && authStep === 'input' && (
                     <>
                       <div className="grid gap-4 sm:grid-cols-2">
                         <div className="space-y-2">
@@ -501,10 +549,10 @@ export default function CheckoutPage() {
                       </div>
                       <Button
                         onClick={handleSendOtp}
-                        disabled={authBusy || phoneInput.length !== 10}
+                        disabled={authBusy || otpSending || phoneInput.length !== 10}
                         className="w-full gap-2"
                       >
-                        {authBusy ? (
+                        {authBusy || otpSending ? (
                           <><Loader2 className="h-4 w-4 animate-spin" /> Sending OTP...</>
                         ) : (
                           <><Smartphone className="h-4 w-4" /> Send OTP</>
@@ -513,7 +561,8 @@ export default function CheckoutPage() {
                     </>
                   )}
 
-                  {authStep === 'otp' && (
+                  {/* Phone: OTP */}
+                  {authMethod === 'phone' && authStep === 'otp' && (
                     <>
                       <div className="rounded-lg bg-primary/5 p-3 text-sm text-muted-foreground">
                         Enter the 6-digit OTP sent to <span className="font-semibold text-foreground">+91 {phoneInput}</span>
@@ -531,14 +580,14 @@ export default function CheckoutPage() {
                       </div>
                       <div className="flex items-center justify-between">
                         <button
-                          onClick={() => { setAuthStep('phone'); setOtpSent(false); setOtpInput(''); }}
+                          onClick={() => { setAuthStep('input'); setOtpInput(''); }}
                           className="text-sm text-muted-foreground hover:underline"
                         >
                           Change number
                         </button>
                         <button
                           onClick={otpTimer === 0 ? handleSendOtp : undefined}
-                          disabled={otpTimer > 0}
+                          disabled={otpTimer > 0 || otpSending}
                           className="text-sm text-primary hover:underline disabled:opacity-50"
                         >
                           {otpTimer > 0 ? `Resend in ${otpTimer}s` : 'Resend OTP'}
@@ -557,11 +606,73 @@ export default function CheckoutPage() {
                       </Button>
                     </>
                   )}
+
+                  {/* Email: input */}
+                  {authMethod === 'email' && authStep === 'input' && (
+                    <>
+                      <div className="space-y-2">
+                        <Label htmlFor="auth-email">Email Address</Label>
+                        <div className="relative">
+                          <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                          <Input
+                            id="auth-email"
+                            type="email"
+                            value={emailInput}
+                            onChange={(e) => setEmailInput(e.target.value)}
+                            placeholder="you@example.com"
+                            className="pl-10"
+                          />
+                        </div>
+                      </div>
+                      <Button
+                        onClick={handleSendEmailLink}
+                        disabled={authBusy || otpSending || !emailInput}
+                        className="w-full gap-2"
+                      >
+                        {authBusy || otpSending ? (
+                          <><Loader2 className="h-4 w-4 animate-spin" /> Sending link...</>
+                        ) : (
+                          <><Mail className="h-4 w-4" /> Send Sign-In Link</>
+                        )}
+                      </Button>
+                    </>
+                  )}
+
+                  {/* Email: link sent */}
+                  {authMethod === 'email' && authStep === 'email-sent' && (
+                    <div className="space-y-4 text-center">
+                      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10">
+                        <MailCheck className="h-7 w-7 text-emerald-600" />
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        We sent a sign-in link to{' '}
+                        <span className="font-semibold text-foreground">{emailInput}</span>.
+                        Click the link in your email to sign in.
+                      </p>
+                      <div className="flex gap-2">
+                        <Button variant="outline" className="flex-1 gap-2" onClick={() => setAuthStep('input')}>
+                          <ArrowLeft className="h-4 w-4" /> Different email
+                        </Button>
+                        <Button
+                          variant="outline"
+                          className="flex-1 gap-2"
+                          onClick={handleSendEmailLink}
+                          disabled={authBusy || otpSending}
+                        >
+                          {authBusy || otpSending ? (
+                            <><Loader2 className="h-4 w-4 animate-spin" /> Sending...</>
+                          ) : (
+                            <><Timer className="h-4 w-4" /> Resend link</>
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
               {/* Hidden reCAPTCHA container for Firebase Phone Auth */}
-              {!user && <div id="checkout-recaptcha-container" className="min-h-[1px]" />}
+              {!user && authMethod === 'phone' && <div id="checkout-recaptcha-container" className="min-h-[1px]" />}
 
               {user && (
                 <div className="flex items-center gap-3 rounded-lg bg-emerald-500/10 p-4">
