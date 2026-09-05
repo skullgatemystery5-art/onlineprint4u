@@ -206,6 +206,7 @@ export default function LoginPage() {
               <><Timer className="mr-2 h-4 w-4" /> Resend in {secondsLeft}s</>
             ) : (
               <>Send Verification Code <ArrowRight className="h-4 w-4" /></>
+              <div id="recaptcha-container"></div>
             )}
           </Button>
         </form>
