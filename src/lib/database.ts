@@ -586,6 +586,16 @@ export async function uploadOrderFile(
 export function getOrderFileUrl(filePathOrUrl: string): string | null {
   if (!filePathOrUrl) return null;
   if (/^https?:\/\//i.test(filePathOrUrl)) return filePathOrUrl;
+  return null;
+}
+
+export async function resolveOrderFileUrl(filePathOrUrl: string): Promise<string | null> {
+  if (!filePathOrUrl) return null;
+  if (/^https?:\/\//i.test(filePathOrUrl)) return filePathOrUrl;
   if (!storage) return null;
-  return getDownloadURL(storageRef(storage, filePathOrUrl));
+  try {
+    return await getDownloadURL(storageRef(storage, filePathOrUrl));
+  } catch {
+    return null;
+  }
 }

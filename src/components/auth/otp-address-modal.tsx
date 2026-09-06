@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { X, Phone, MapPin, ShieldCheck, Loader2, ArrowRight, ArrowLeft } from 'lucide-react';
+import { X, Phone, MapPin, ShieldCheck, Loader2, ArrowRight, ArrowLeft, Timer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth-context';
+import { useCountdown } from '@/lib/use-countdown';
 
 type OtpAddressModalProps = {
   open: boolean;
@@ -16,10 +17,9 @@ type OtpAddressModalProps = {
 
 type Step = 'details' | 'otp';
 
-const RECAPTCHA_CONTAINER_ID = 'otp-address-recaptcha-container';
-
 export function OtpAddressModal({ open, onClose, onSuccess, title, description }: OtpAddressModalProps) {
-  const { sendPhoneOtp, verifyPhoneOtp, otpSending } = useAuth();
+  const { sendOtp, verifyOtp, otpSending } = useAuth();
+  const { secondsLeft, isCoolingDown, startCooldown } = useCountdown();
   const [step, setStep] = useState<Step>('details');
   const [loading, setLoading] = useState(false);
 
@@ -36,8 +36,6 @@ export function OtpAddressModal({ open, onClose, onSuccess, title, description }
       setStep('details');
       setOtp('');
       setLoading(false);
-      const container = document.getElementById(RECAPTCHA_CONTAINER_ID);
-      if (container) container.innerHTML = '';
     }
   }, [open]);
 
@@ -53,13 +51,15 @@ export function OtpAddressModal({ open, onClose, onSuccess, title, description }
       return;
     }
     setLoading(true);
-    const { error } = await sendPhoneOtp(phone, RECAPTCHA_CONTAINER_ID);
+    const { error, cooldownSec } = await sendOtp('phone', phone);
     setLoading(false);
     if (error) {
       toast.error(error);
+      if (cooldownSec) startCooldown(cooldownSec);
       return;
     }
     setStep('otp');
+    startCooldown(30);
     toast.success('OTP sent to your phone number.');
   };
 
@@ -69,7 +69,7 @@ export function OtpAddressModal({ open, onClose, onSuccess, title, description }
       return;
     }
     setLoading(true);
-    const { error } = await verifyPhoneOtp(otp);
+    const { error } = await verifyOtp('phone', phone, otp);
     setLoading(false);
     if (error) {
       toast.error(error);
@@ -77,6 +77,20 @@ export function OtpAddressModal({ open, onClose, onSuccess, title, description }
     }
     toast.success('Verified! You are logged in.');
     onSuccess();
+  };
+
+  const handleResend = async () => {
+    if (isCoolingDown) return;
+    setLoading(true);
+    const { error, cooldownSec } = await sendOtp('phone', phone);
+    setLoading(false);
+    if (error) {
+      toast.error(error);
+      if (cooldownSec) startCooldown(cooldownSec);
+      return;
+    }
+    toast.success('New OTP sent to +91 ' + phone);
+    startCooldown(30);
   };
 
   return (
@@ -208,11 +222,22 @@ export function OtpAddressModal({ open, onClose, onSuccess, title, description }
                 Verify & Proceed
               </Button>
             </div>
+
+            <button
+              onClick={handleResend}
+              disabled={loading || otpSending || isCoolingDown}
+              className="mt-4 w-full text-center text-sm text-primary hover:underline disabled:opacity-50"
+            >
+              {isCoolingDown ? `Resend available in ${secondsLeft}s` : "Didn't receive the code? Resend"}
+            </button>
+            {isCoolingDown && (
+              <div className="mt-2 flex items-center justify-center gap-2 rounded-lg bg-amber-500/10 px-4 py-2.5 text-sm text-amber-700">
+                <Timer className="h-4 w-4 animate-pulse" />
+                Please wait {secondsLeft}s before requesting another code
+              </div>
+            )}
           </div>
         )}
-
-        {/* Hidden reCAPTCHA container for Firebase Phone Auth */}
-        <div id={RECAPTCHA_CONTAINER_ID} className="mt-2 min-h-[1px]" />
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import {
   getProfile,
   upsertProfile,
@@ -7,18 +7,17 @@ import {
 } from './database';
 import type { User as FirebaseUser } from 'firebase/auth';
 import {
-  signInWithPhoneNumber,
-  RecaptchaVerifier,
-  type ConfirmationResult,
   onAuthStateChanged,
   signOut as firebaseSignOut,
   signInWithEmailAndPassword,
+  signInWithCustomToken,
+  createUserWithEmailAndPassword,
   sendPasswordResetEmail,
-  sendSignInLinkToEmail,
-  isSignInWithEmailLink,
-  signInWithEmailLink,
+  updateProfile as firebaseUpdateProfile,
 } from 'firebase/auth';
 import { firebaseAuth } from './firebase';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { app } from './firebase';
 
 type AuthUser = {
   uid: string;
@@ -37,10 +36,10 @@ type AuthContextType = {
   otpSending: boolean;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
-  sendPhoneOtp: (phone: string, recaptchaContainerId: string) => Promise<SendOtpResult>;
-  verifyPhoneOtp: (otp: string) => Promise<{ error: string | null }>;
-  sendEmailOtp: (email: string) => Promise<SendOtpResult>;
-  verifyEmailOtp: (email: string, url: string) => Promise<{ error: string | null }>;
+  sendOtp: (channel: 'phone' | 'email', contact: string) => Promise<SendOtpResult>;
+  verifyOtp: (channel: 'phone' | 'email', contact: string, code: string) => Promise<{ error: string | null }>;
+  signInWithEmail: (email: string, password: string) => Promise<{ error: string | null }>;
+  signUpWithEmail: (email: string, password: string, name: string) => Promise<{ error: string | null }>;
   adminLogin: (email: string, password: string) => Promise<{ error: string | null }>;
   adminResetPassword: (email: string) => Promise<{ error: string | null }>;
 };
@@ -53,10 +52,10 @@ const AuthContext = createContext<AuthContextType>({
   otpSending: false,
   signOut: async () => {},
   refreshProfile: async () => {},
-  sendPhoneOtp: async () => ({ error: 'Not initialized' }),
-  verifyPhoneOtp: async () => ({ error: 'Not initialized' }),
-  sendEmailOtp: async () => ({ error: 'Not initialized' }),
-  verifyEmailOtp: async () => ({ error: 'Not initialized' }),
+  sendOtp: async () => ({ error: 'Not initialized' }),
+  verifyOtp: async () => ({ error: 'Not initialized' }),
+  signInWithEmail: async () => ({ error: 'Not initialized' }),
+  signUpWithEmail: async () => ({ error: 'Not initialized' }),
   adminLogin: async () => ({ error: 'Not initialized' }),
   adminResetPassword: async () => ({ error: 'Not initialized' }),
 });
@@ -70,27 +69,11 @@ function toAuthUser(fbUser: FirebaseUser): AuthUser {
   };
 }
 
-const EMAIL_LINK_KEY = 'emailForSignIn';
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
-  const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
   const [otpSending, setOtpSending] = useState(false);
-  const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
-
-  const clearRecaptcha = useCallback(() => {
-    const verifier = recaptchaVerifierRef.current;
-    if (verifier) {
-      try {
-        verifier.clear();
-      } catch {
-        // ignore
-      }
-      recaptchaVerifierRef.current = null;
-    }
-  }, []);
 
   const fetchProfile = useCallback(async (uid: string) => {
     try {
@@ -134,202 +117,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [fetchProfile]);
 
-  // Handle email link sign-in redirect on mount
-  useEffect(() => {
-    if (!isFirebaseConfigured || !firebaseAuth) return;
-    if (isSignInWithEmailLink(firebaseAuth, window.location.href)) {
-      let email = '';
-      try {
-        email = window.localStorage.getItem(EMAIL_LINK_KEY) || '';
-      } catch {
-        // ignore
+  const sendOtp = useCallback(
+    async (channel: 'phone' | 'email', contact: string): Promise<SendOtpResult> => {
+      if (!isFirebaseConfigured || !app) {
+        return { error: 'Authentication is not configured. Please contact support.' };
       }
-      if (!email) {
-        return;
-      }
-      signInWithEmailLink(firebaseAuth, email, window.location.href)
-        .then(async (result) => {
-          try {
-            window.localStorage.removeItem(EMAIL_LINK_KEY);
-          } catch {
-            // ignore
-          }
-          if (result.user) {
-            const authUser = toAuthUser(result.user);
-            setUser(authUser);
-            await upsertProfile({
-              id: authUser.uid,
-              email: authUser.email ?? email,
-              full_name: authUser.displayName ?? '',
-              phone: authUser.phoneNumber ?? '',
-              role: 'user',
-            });
-            await fetchProfile(authUser.uid);
-          }
-          window.history.replaceState({}, document.title, window.location.pathname);
-        })
-        .catch(() => {
-          // ignore — link may be expired or already used
-        });
-    }
-  }, [fetchProfile]);
-
-  const sendPhoneOtp = useCallback(
-    async (phone: string, recaptchaContainerId: string): Promise<SendOtpResult> => {
-      if (!isFirebaseConfigured || !firebaseAuth) {
-        return { error: 'Phone OTP is not configured. Please contact support.' };
-      }
-      const fullPhone = phone.startsWith('+') ? phone : `+91${phone}`;
       setOtpSending(true);
       try {
-        clearRecaptcha();
-
-        const container = document.getElementById(recaptchaContainerId);
-        if (!container) {
-          return { error: 'Verification widget could not be loaded. Please refresh the page.' };
-        }
-        container.innerHTML = '';
-
-        await new Promise((r) => setTimeout(r, 50));
-
-        const verifier = new RecaptchaVerifier(firebaseAuth, recaptchaContainerId, {
-          size: 'invisible',
-          'expired-callback': () => {
-            clearRecaptcha();
-          },
-        });
-        recaptchaVerifierRef.current = verifier;
-
-        await verifier.render();
-
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error('RECAPTCHA_TIMEOUT')), 30000);
-        });
-
-        const result = await Promise.race([
-          signInWithPhoneNumber(firebaseAuth, fullPhone, verifier),
-          timeoutPromise,
-        ]);
-        setConfirmationResult(result);
+        const functions = getFunctions(app, 'us-central1');
+        const sendOtpFn = httpsCallable(functions, 'sendOtp');
+        await sendOtpFn({ channel, contact });
         return { error: null };
       } catch (err) {
         const error = err as { code?: string; message?: string };
-        clearRecaptcha();
-
-        if (error.message === 'RECAPTCHA_TIMEOUT') {
+        if (error.code === 'functions/resource-exhausted') {
           return {
-            error: 'Verification timed out. Please try again.',
+            error: 'Too many requests. Please wait 30 seconds before trying again.',
             cooldownSec: 30,
           };
         }
-        if (error.code === 'auth/too-many-requests') {
-          return {
-            error: 'Too many OTP requests. Please wait before requesting another code.',
-            cooldownSec: 60,
-          };
+        if (error.code === 'functions/invalid-argument') {
+          return { error: error.message || 'Invalid input. Please check and try again.' };
         }
-        if (error.code === 'auth/invalid-phone-number') {
-          return { error: 'Invalid phone number. Please check and try again.' };
-        }
-        if (error.code === 'auth/captcha-check-failed') {
-          return { error: 'Verification check failed. Please try again.' };
-        }
-        if (error.code === 'auth/operation-not-allowed') {
-          return { error: 'Phone login is not enabled. Please contact support.' };
-        }
-        if (error.code === 'auth/quota-exceeded') {
-          return { error: 'SMS quota exceeded. Please try again later or use email login.' };
-        }
-        const msg = error.message ?? 'Failed to send OTP';
-        return { error: msg };
-      } finally {
-        setOtpSending(false);
-      }
-    },
-    [clearRecaptcha]
-  );
-
-  const verifyPhoneOtp = useCallback(
-    async (otp: string): Promise<{ error: string | null }> => {
-      if (!confirmationResult) {
-        return { error: 'No OTP request in progress. Please request a new code.' };
-      }
-      try {
-        const fbUserCred = await confirmationResult.confirm(otp);
-        if (!fbUserCred.user) {
-          return { error: 'Verification failed — no user returned' };
-        }
-
-        const authUser = toAuthUser(fbUserCred.user);
-        setUser(authUser);
-
-        const phone = authUser.phoneNumber ?? '';
-        const displayName = authUser.displayName ?? '';
-        const email = authUser.email ?? '';
-
-        await upsertProfile({
-          id: authUser.uid,
-          email,
-          full_name: displayName,
-          phone,
-          role: 'user',
-        });
-
-        await fetchProfile(authUser.uid);
-
-        clearRecaptcha();
-        setConfirmationResult(null);
-        return { error: null };
-      } catch (err) {
-        const error = err as { code?: string; message?: string };
-        if (error.code === 'auth/invalid-verification-code') {
-          return { error: 'Invalid verification code. Please check and try again.' };
-        }
-        if (error.code === 'auth/code-expired') {
-          return { error: 'This code has expired. Please request a new one.' };
-        }
-        if (error.code === 'auth/too-many-requests') {
-          return { error: 'Too many attempts. Please wait a moment and try again.' };
-        }
-        return { error: error.message || 'Invalid or expired OTP' };
-      }
-    },
-    [confirmationResult, fetchProfile, clearRecaptcha]
-  );
-
-  const sendEmailOtp = useCallback(
-    async (email: string): Promise<SendOtpResult> => {
-      if (!isFirebaseConfigured || !firebaseAuth) {
-        return { error: 'Email login is not configured. Please contact support.' };
-      }
-      const actionCodeSettings = {
-        url: window.location.origin + '/login',
-        handleCodeInApp: true,
-      };
-      setOtpSending(true);
-      try {
-        try {
-          window.localStorage.setItem(EMAIL_LINK_KEY, email.trim());
-        } catch {
-          // ignore
-        }
-        await sendSignInLinkToEmail(firebaseAuth, email.trim(), actionCodeSettings);
-        return { error: null };
-      } catch (err) {
-        const error = err as { code?: string; message?: string };
-        if (error.code === 'auth/invalid-email') {
-          return { error: 'Please enter a valid email address.' };
-        }
-        if (error.code === 'auth/operation-not-allowed') {
-          return { error: 'Email link login is not enabled. Please contact support.' };
-        }
-        if (error.code === 'auth/too-many-requests') {
-          return {
-            error: 'Too many requests. Please wait before trying again.',
-            cooldownSec: 60,
-          };
-        }
-        const msg = error.message ?? 'Failed to send sign-in link.';
+        const msg = error.message ?? 'Failed to send verification code.';
         return { error: msg };
       } finally {
         setOtpSending(false);
@@ -338,19 +148,77 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
-  const verifyEmailOtp = useCallback(
-    async (email: string, url: string): Promise<{ error: string | null }> => {
-      if (!isFirebaseConfigured || !firebaseAuth) {
-        return { error: 'Email login is not configured. Please contact support.' };
+  const verifyOtp = useCallback(
+    async (channel: 'phone' | 'email', contact: string, code: string): Promise<{ error: string | null }> => {
+      if (!isFirebaseConfigured || !app || !firebaseAuth) {
+        return { error: 'Authentication is not configured. Please contact support.' };
       }
       try {
-        const result = await signInWithEmailLink(firebaseAuth, email.trim(), url);
-        if (!result.user) {
+        const functions = getFunctions(app, 'us-central1');
+        const verifyOtpFn = httpsCallable(functions, 'verifyOtp');
+        const result = await verifyOtpFn({ channel, contact, code });
+        const data = result.data as { customToken: string };
+
+        if (!data.customToken) {
+          return { error: 'Verification failed. Please try again.' };
+        }
+
+        const userCred = await signInWithCustomToken(firebaseAuth, data.customToken);
+        if (!userCred.user) {
           return { error: 'Sign-in failed — no user returned.' };
         }
-        const authUser = toAuthUser(result.user);
+
+        const authUser = toAuthUser(userCred.user);
         setUser(authUser);
 
+        await upsertProfile({
+          id: authUser.uid,
+          email: authUser.email ?? (channel === 'email' ? contact : ''),
+          full_name: authUser.displayName ?? '',
+          phone: authUser.phoneNumber ?? (channel === 'phone' ? contact : ''),
+          role: 'user',
+        });
+
+        await fetchProfile(authUser.uid);
+        return { error: null };
+      } catch (err) {
+        const error = err as { code?: string; message?: string };
+        if (error.code === 'functions/not-found') {
+          return { error: 'No code found. Please request a new one.' };
+        }
+        if (error.code === 'functions/deadline-exceeded') {
+          return { error: 'This code has expired. Please request a new one.' };
+        }
+        if (error.code === 'functions/resource-exhausted') {
+          return { error: 'Too many incorrect attempts. Please request a new code.' };
+        }
+        if (error.code === 'functions/invalid-argument') {
+          return { error: error.message || 'Incorrect verification code.' };
+        }
+        const msg = error.message ?? 'Verification failed. Please try again.';
+        return { error: msg };
+      }
+    },
+    [fetchProfile]
+  );
+
+  const signInWithEmail = useCallback(
+    async (email: string, password: string): Promise<{ error: string | null }> => {
+      if (!isFirebaseConfigured || !firebaseAuth) {
+        return { error: 'Firebase is not configured. Please contact support.' };
+      }
+      try {
+        const userCred = await signInWithEmailAndPassword(firebaseAuth, email.trim(), password);
+        if (!userCred.user) {
+          return { error: 'Sign-in failed. No user returned.' };
+        }
+        const authUser: AuthUser = {
+          uid: userCred.user.uid,
+          phoneNumber: userCred.user.phoneNumber,
+          email: userCred.user.email,
+          displayName: userCred.user.displayName ?? '',
+        };
+        setUser(authUser);
         await upsertProfile({
           id: authUser.uid,
           email: authUser.email ?? email.trim(),
@@ -358,27 +226,65 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           phone: authUser.phoneNumber ?? '',
           role: 'user',
         });
-
         await fetchProfile(authUser.uid);
-
-        try {
-          window.localStorage.removeItem(EMAIL_LINK_KEY);
-        } catch {
-          // ignore
-        }
         return { error: null };
       } catch (err) {
         const error = err as { code?: string; message?: string };
-        if (error.code === 'auth/invalid-action-code') {
-          return { error: 'This sign-in link is invalid or has expired. Please request a new one.' };
+        if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found') {
+          return { error: 'Invalid email or password.' };
         }
-        if (error.code === 'auth/expired-action-code') {
-          return { error: 'This sign-in link has expired. Please request a new one.' };
+        if (error.code === 'auth/too-many-requests') {
+          return { error: 'Too many failed attempts. Please try again later.' };
+        }
+        const msg = error.message ?? 'Sign-in failed. Please try again.';
+        return { error: msg };
+      }
+    },
+    [fetchProfile]
+  );
+
+  const signUpWithEmail = useCallback(
+    async (email: string, password: string, name: string): Promise<{ error: string | null }> => {
+      if (!isFirebaseConfigured || !firebaseAuth) {
+        return { error: 'Firebase is not configured. Please contact support.' };
+      }
+      try {
+        const userCred = await createUserWithEmailAndPassword(firebaseAuth, email.trim(), password);
+        if (!userCred.user) {
+          return { error: 'Sign-up failed. No user returned.' };
+        }
+        if (name.trim()) {
+          await firebaseUpdateProfile(userCred.user, { displayName: name.trim() });
+        }
+        const authUser: AuthUser = {
+          uid: userCred.user.uid,
+          phoneNumber: userCred.user.phoneNumber,
+          email: userCred.user.email,
+          displayName: name.trim(),
+        };
+        setUser(authUser);
+        await upsertProfile({
+          id: authUser.uid,
+          email: authUser.email ?? email.trim(),
+          full_name: name.trim(),
+          phone: authUser.phoneNumber ?? '',
+          role: 'user',
+        });
+        await fetchProfile(authUser.uid);
+        return { error: null };
+      } catch (err) {
+        const error = err as { code?: string; message?: string };
+        if (error.code === 'auth/email-already-in-use') {
+          return { error: 'This email is already registered. Try signing in instead.' };
         }
         if (error.code === 'auth/invalid-email') {
-          return { error: 'The email does not match the one the link was sent to.' };
+          return { error: 'Please enter a valid email address.' };
         }
-        return { error: error.message || 'Sign-in failed. Please try again.' };
+        if (error.code === 'auth/weak-password') {
+          return { error: 'Password is too weak. Use at least 6 characters.' };
+        }
+        const msg = error.message ?? 'Sign-up failed. Please try again.';
+        return { error: msg };
       }
     },
     [fetchProfile]
@@ -456,11 +362,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // ignore
       }
     }
-    clearRecaptcha();
-    setConfirmationResult(null);
     setUser(null);
     setProfile(null);
-  }, [clearRecaptcha]);
+  }, []);
 
   return (
     <AuthContext.Provider
@@ -472,10 +376,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         otpSending,
         signOut,
         refreshProfile,
-        sendPhoneOtp,
-        verifyPhoneOtp,
-        sendEmailOtp,
-        verifyEmailOtp,
+        sendOtp,
+        verifyOtp,
+        signInWithEmail,
+        signUpWithEmail,
         adminLogin,
         adminResetPassword,
       }}
