@@ -3,6 +3,17 @@ import * as admin from "firebase-admin";
 
 admin.initializeApp();
 
+// ============================
+// Firebase Environment Secrets (Cloud Secret Manager)
+// ============================
+const ZOHO_USER = functions.params.defineSecret("VITE_ZOHO_USER");
+const ZOHO_PASS = functions.params.defineSecret("VITE_ZOHO_PASS");
+const ZOHO_SMTP_HOST = functions.params.defineSecret("VITE_ZOHO_SMTP_HOST");
+const ZOHO_SMTP_PORT = functions.params.defineSecret("VITE_ZOHO_SMTP_PORT");
+const ZOHO_FROM = functions.params.defineSecret("VITE_ZOHO_FROM");
+
+const smtpSecrets = [ZOHO_USER, ZOHO_PASS, ZOHO_SMTP_HOST, ZOHO_SMTP_PORT, ZOHO_FROM];
+
 
 
 interface OrderItem {
@@ -101,16 +112,16 @@ function buildWhatsAppMessage(order: OrderData, timestamp: string): string {
 }
 
 async function sendEmail(to: string, subject: string, body: string): Promise<string> {
-  const smtpUser = process.env.SMTP_USER;
-  const smtpPass = process.env.SMTP_PASS;
+  const smtpUser = ZOHO_USER.value();
+  const smtpPass = ZOHO_PASS.value();
   if (!smtpUser || !smtpPass) {
-    console.log("[MAIL] SMTP_USER/SMTP_PASS not set. Email body:\n" + body);
+    console.log("[MAIL] VITE_ZOHO_USER/VITE_ZOHO_PASS not set. Email body:\n" + body);
     return "skipped";
   }
   try {
-    const smtpHost = process.env.SMTP_HOST || "smtp.zoho.in";
-    const smtpPort = parseInt(process.env.SMTP_PORT || "465", 10);
-    const smtpFrom = process.env.SMTP_FROM || `Online Print 4U <${smtpUser}>`;
+    const smtpHost = ZOHO_SMTP_HOST.value() || "smtp.zoho.in";
+    const smtpPort = parseInt(ZOHO_SMTP_PORT.value() || "465", 10);
+    const smtpFrom = ZOHO_FROM.value() || `Online Print 4U <${smtpUser}>`;
 
     const nodemailer = await import("nodemailer");
     const transporter = nodemailer.createTransport({
@@ -221,7 +232,9 @@ interface OtpVerifyData {
   code: string;
 }
 
-export const sendOtp = functions.https.onCall(async (data: OtpRequestData) => {
+export const sendOtp = functions
+  .runWith({ secrets: smtpSecrets })
+  .https.onCall(async (data: OtpRequestData) => {
   const channel = data?.channel;
   const contact = (data?.contact || "").trim();
 
@@ -277,7 +290,9 @@ export const sendOtp = functions.https.onCall(async (data: OtpRequestData) => {
   return { success: true, channel, sendResult };
 });
 
-export const verifyOtp = functions.https.onCall(async (data: OtpVerifyData) => {
+export const verifyOtp = functions
+  .runWith({ secrets: smtpSecrets })
+  .https.onCall(async (data: OtpVerifyData) => {
   const channel = data?.channel;
   const contact = (data?.contact || "").trim();
   const code = (data?.code || "").trim();
@@ -375,8 +390,48 @@ export const verifyOtp = functions.https.onCall(async (data: OtpVerifyData) => {
   return { success: true, customToken, uid };
 });
 
-export const onOrderCreated = functions.firestore
-  .document("orders/{orderId}")
+// ============================
+// Password Reset (Zoho SMTP only — no Firebase default email)
+// ============================
+
+async function sendPasswordResetEmail(to: string): Promise<string> {
+  const resetUrl = `${process.env.VITE_APP_URL || "https://onlineprint4u.in"}/reset-password?email=${encodeURIComponent(to)}`;
+  const subject = "Reset your Online Print 4U password";
+  const body =
+    `A password reset was requested for your Online Print 4U account.
+
+` +
+    `Click the link below to choose a new password:
+${resetUrl}
+
+` +
+    `This link will expire in 1 hour. If you did not request a reset, please ignore this email.`;
+  return sendEmail(to, subject, body);
+}
+
+export const sendPasswordReset = functions
+  .runWith({ secrets: smtpSecrets })
+  .https.onCall(async (data: { email: string }) => {
+  const email = (data?.email || "").trim().toLowerCase();
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new functions.https.HttpsError("invalid-argument", "A valid email address is required.");
+  }
+
+  try {
+    await admin.auth().getUserByEmail(email);
+  } catch {
+    // Return success to avoid revealing whether an account exists
+    return { success: true };
+  }
+
+  const result = await sendPasswordResetEmail(email);
+  console.log(`Password reset email sent to ${email}, result=${result}`);
+  return { success: true };
+});
+
+export const onOrderCreated = functions
+  .runWith({ secrets: smtpSecrets })
+  .firestore.document("orders/{orderId}")
   .onCreate(async (snap) => {
     const order = snap.data() as OrderData;
     if (!order || !order.order_number) {

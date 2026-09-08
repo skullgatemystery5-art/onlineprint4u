@@ -12,7 +12,6 @@ import {
   signInWithEmailAndPassword,
   signInWithCustomToken,
   createUserWithEmailAndPassword,
-  sendPasswordResetEmail,
   updateProfile as firebaseUpdateProfile,
 } from 'firebase/auth';
 import { firebaseAuth } from './firebase';
@@ -336,16 +335,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const adminResetPassword = useCallback(
     async (email: string): Promise<{ error: string | null }> => {
-      if (!isFirebaseConfigured || !firebaseAuth) {
-        return { error: 'Firebase is not configured. Please contact support.' };
+      if (!isFirebaseConfigured || !app) {
+        return { error: 'Authentication is not configured. Please contact support.' };
       }
       try {
-        await sendPasswordResetEmail(firebaseAuth, email.trim());
+        const functions = getFunctions(app, 'us-central1');
+        const sendResetFn = httpsCallable(functions, 'sendPasswordReset');
+        await sendResetFn({ email: email.trim() });
         return { error: null };
       } catch (err) {
         const error = err as { code?: string; message?: string };
-        if (error.code === 'auth/user-not-found') {
-          return { error: 'No account found with this email address.' };
+        if (error.code === 'functions/invalid-argument') {
+          return { error: 'Please enter a valid email address.' };
         }
         const msg = error.message ?? 'Failed to send reset email. Please try again.';
         return { error: msg };
