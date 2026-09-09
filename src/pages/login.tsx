@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Mail, Phone, Loader2, ChevronRight, ShieldCheck, ArrowRight, ArrowLeft, Timer } from 'lucide-react';
 import { AuthShell } from '@/components/auth/auth-shell';
@@ -10,62 +10,70 @@ import { useAuth } from '@/lib/auth-context';
 import { useCountdown } from '@/lib/use-countdown';
 import { cn } from '@/lib/utils';
 
-type AuthMethod = 'phone' | 'email';
-type AuthStep = 'input' | 'otp';
+type LoginMode = 'email' | 'phone';
+type LoginStep = 'credentials' | 'otp';
+
+const RECAPTCHA_CONTAINER_ID = 'login-recaptcha-container';
 
 export default function LoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const redirect = searchParams.get('redirect') || '/dashboard';
-  const { sendOtp, verifyOtp, otpSending } = useAuth();
+  const { sendPhoneOtp, verifyPhoneOtp, sendEmailOtp, verifyEmailOtp, otpSending } = useAuth();
   const { secondsLeft, isCoolingDown, startCooldown } = useCountdown();
-  const [method, setMethod] = useState<AuthMethod>('phone');
-  const [step, setStep] = useState<AuthStep>('input');
+  const [mode, setMode] = useState<LoginMode>('phone');
+  const [step, setStep] = useState<LoginStep>('credentials');
 
-  const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const switchMethod = (m: AuthMethod) => {
-    setMethod(m);
-    setStep('input');
-    setOtp('');
-  };
-
   const handleSendOtp = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
-    const contact = method === 'phone' ? phone : email.trim();
-    if (method === 'phone' && phone.length !== 10) {
-      toast.error('Please enter a valid 10-digit mobile number.');
-      return;
+    if (mode === 'email') {
+      if (!email || !email.includes('@')) {
+        toast.error('Please enter a valid email address.');
+        return;
+      }
+      setLoading(true);
+      const { error, cooldownSec } = await sendEmailOtp(email);
+      setLoading(false);
+      if (error) {
+        toast.error(error);
+        if (cooldownSec) startCooldown(cooldownSec);
+        return;
+      }
+      toast.success('Verification code sent to your email.');
+    } else {
+      if (phone.length !== 10) {
+        toast.error('Please enter a valid 10-digit mobile number.');
+        return;
+      }
+      setLoading(true);
+      const { error, cooldownSec } = await sendPhoneOtp(phone, RECAPTCHA_CONTAINER_ID);
+      setLoading(false);
+      if (error) {
+        toast.error(error);
+        if (cooldownSec) startCooldown(cooldownSec);
+        return;
+      }
+      toast.success('Verification code sent to your phone.');
     }
-    if (method === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      toast.error('Please enter a valid email address.');
-      return;
-    }
-    setLoading(true);
-    const { error, cooldownSec } = await sendOtp(method, contact);
-    setLoading(false);
-    if (error) {
-      toast.error(error);
-      if (cooldownSec) startCooldown(cooldownSec);
-      return;
-    }
-    toast.success(method === 'phone' ? 'Verification code sent to your phone.' : 'Verification code sent to your email.');
     setStep('otp');
-    startCooldown(30);
-  }, [method, phone, email, sendOtp, startCooldown]);
+  }, [mode, email, phone, sendEmailOtp, sendPhoneOtp, startCooldown]);
 
-  const handleVerifyOtp = useCallback(async (e: React.FormEvent) => {
+  const handleVerify = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (otp.length !== 6) {
       toast.error('Please enter the 6-digit verification code.');
       return;
     }
-    const contact = method === 'phone' ? phone : email.trim();
     setLoading(true);
-    const { error } = await verifyOtp(method, contact, otp);
+    const { error } =
+      mode === 'email'
+        ? await verifyEmailOtp(email, otp)
+        : await verifyPhoneOtp(otp);
     setLoading(false);
     if (error) {
       toast.error(error);
@@ -73,59 +81,74 @@ export default function LoginPage() {
     }
     toast.success('Welcome back!');
     navigate(redirect);
-  }, [otp, method, phone, email, verifyOtp, navigate, redirect]);
+  }, [otp, mode, email, verifyEmailOtp, verifyPhoneOtp, navigate, redirect]);
 
-  const handleResend = useCallback(async () => {
-    if (isCoolingDown) return;
-    const contact = method === 'phone' ? phone : email.trim();
-    setLoading(true);
-    const { error, cooldownSec } = await sendOtp(method, contact);
-    setLoading(false);
-    if (error) {
-      toast.error(error);
-      if (cooldownSec) startCooldown(cooldownSec);
-      return;
-    }
-    toast.success('New verification code sent.');
-    startCooldown(30);
-  }, [method, phone, email, sendOtp, isCoolingDown, startCooldown]);
+  const switchMode = (m: LoginMode) => {
+    setMode(m);
+    setStep('credentials');
+    setOtp('');
+  };
+
+  useEffect(() => {
+    return () => {
+      const container = document.getElementById(RECAPTCHA_CONTAINER_ID);
+      if (container) container.innerHTML = '';
+    };
+  }, []);
 
   return (
     <AuthShell
-      title="Sign in"
-      subtitle="Enter your phone number or email to receive a 6-digit verification code."
+      title="Welcome back"
+      subtitle="Sign in to your Online Print 4U account to track orders and print more."
       footer={
-        <Link to="/" className="text-sm text-muted-foreground hover:text-foreground">
-          &larr; Back to home
-        </Link>
+        <>
+          Don&apos;t have an account?{' '}
+          <Link to="/signup" className="font-semibold text-primary hover:underline">
+            Sign up free
+          </Link>
+        </>
       }
     >
-      {/* Method switcher */}
       <div className="mb-6 grid grid-cols-2 gap-1 rounded-xl bg-muted p-1">
         <button
-          onClick={() => switchMethod('phone')}
+          onClick={() => switchMode('phone')}
           className={cn(
             'flex items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-medium transition-colors',
-            method === 'phone' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+            mode === 'phone' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
           )}
         >
           <Phone className="h-4 w-4" /> Phone
         </button>
         <button
-          onClick={() => switchMethod('email')}
+          onClick={() => switchMode('email')}
           className={cn(
             'flex items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-medium transition-colors',
-            method === 'email' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+            mode === 'email' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
           )}
         >
           <Mail className="h-4 w-4" /> Email
         </button>
       </div>
 
-      {/* Input step */}
-      {step === 'input' && (
+      {step === 'credentials' && (
         <form onSubmit={handleSendOtp} className="space-y-4 animate-fade-in">
-          {method === 'phone' ? (
+          {mode === 'email' ? (
+            <div className="space-y-2">
+              <Label htmlFor="email">Email Address</Label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  className="pl-10"
+                  required
+                />
+              </div>
+            </div>
+          ) : (
             <div className="space-y-2">
               <Label htmlFor="phone">Mobile Number</Label>
               <div className="flex items-center gap-2">
@@ -140,29 +163,11 @@ export default function LoginPage() {
                   placeholder="10-digit number"
                   className="flex-1"
                   required
-                  autoFocus
-                />
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <Label htmlFor="email">Email Address</Label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@example.com"
-                  className="pl-10"
-                  required
-                  autoFocus
                 />
               </div>
             </div>
           )}
-          <Button type="submit" className="w-full gap-2" disabled={loading || otpSending || isCoolingDown || (method === 'phone' ? phone.length !== 10 : !email)}>
+          <Button type="submit" className="w-full gap-2" disabled={loading || otpSending || isCoolingDown || (mode === 'phone' && phone.length !== 10)}>
             {loading || otpSending ? (
               <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Sending code...</>
             ) : isCoolingDown ? (
@@ -174,14 +179,13 @@ export default function LoginPage() {
         </form>
       )}
 
-      {/* OTP step */}
       {step === 'otp' && (
-        <form onSubmit={handleVerifyOtp} className="space-y-4 animate-fade-in">
+        <form onSubmit={handleVerify} className="space-y-4 animate-fade-in">
           <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4 text-sm">
             <p className="text-muted-foreground">
               Enter the 6-digit code sent to{' '}
               <span className="font-bold text-foreground">
-                {method === 'phone' ? `+91 ${phone}` : email}
+                {mode === 'email' ? email : `+91 ${phone}`}
               </span>
             </p>
           </div>
@@ -201,7 +205,7 @@ export default function LoginPage() {
             />
           </div>
           <div className="flex gap-2">
-            <Button type="button" variant="outline" className="gap-1.5" onClick={() => { setStep('input'); setOtp(''); }} disabled={loading}>
+            <Button type="button" variant="outline" className="gap-1.5" onClick={() => { setStep('credentials'); setOtp(''); }} disabled={loading}>
               <ArrowLeft className="h-4 w-4" /> Back
             </Button>
             <Button type="submit" className="flex-1 gap-2" disabled={otp.length !== 6 || loading}>
@@ -212,22 +216,17 @@ export default function LoginPage() {
               )}
             </Button>
           </div>
-          <button
-            type="button"
-            onClick={handleResend}
-            disabled={loading || otpSending || isCoolingDown}
-            className="w-full text-center text-sm text-primary hover:underline disabled:opacity-50"
-          >
-            {isCoolingDown ? `Resend available in ${secondsLeft}s` : "Didn't receive the code? Resend"}
-          </button>
-          {isCoolingDown && (
-            <div className="flex items-center justify-center gap-2 rounded-lg bg-amber-500/10 px-4 py-2.5 text-sm text-amber-700">
-              <Timer className="h-4 w-4 animate-pulse" />
-              Please wait {secondsLeft}s before requesting another code
-            </div>
-          )}
         </form>
       )}
+
+      {/* reCAPTCHA container for Firebase Phone Auth */}
+      <div id={RECAPTCHA_CONTAINER_ID} className="mt-4 flex min-h-[78px] items-center justify-center" />
+
+      <div className="mt-6 text-center">
+        <Link to="/" className="text-sm text-muted-foreground hover:text-foreground">
+          ← Back to home
+        </Link>
+      </div>
     </AuthShell>
   );
 }

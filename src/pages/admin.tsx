@@ -67,7 +67,7 @@ import {
 } from '@/lib/database';
 import { useAuth } from '@/lib/auth-context';
 import { formatINR } from '@/lib/pricing';
-import { getOrderFileUrl } from '@/lib/database';
+import { getOrderFileUrl } from '@/lib/storage';
 
 const statusOptions = ['placed', 'processing', 'packed', 'shipped', 'out_for_delivery', 'delivered', 'cancelled'];
 

@@ -15,8 +15,6 @@ import {
   ShieldCheck,
   Mail,
   Phone,
-  Timer,
-  MailCheck,
 } from 'lucide-react';
 import { Header } from '@/components/header';
 import { Footer } from '@/components/footer';
@@ -50,20 +48,28 @@ const steps = [
   { num: 5, icon: CreditCard, label: 'Checkout' },
 ];
 
-
+const RECAPTCHA_ID = 'print-recaptcha-container';
 
 export default function PrintPage() {
   const navigate = useNavigate();
-  const { user, profile, sendOtp, verifyOtp, otpSending } = useAuth();
+  const { user, profile, sendPhoneOtp, verifyPhoneOtp, sendEmailOtp, verifyEmailOtp, otpSending } = useAuth();
   const { addItem, clearCart } = useCart();
   const [step, setStep] = useState(1);
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [addressData, setAddressData] = useState<AddressData>({
-    name: '', phone: '', email: '', line1: '', line2: '', city: '', state: '', pincode: '',
+    name: '',
+    phone: '',
+    email: '',
+    line1: '',
+    line2: '',
+    city: '',
+    state: '',
+    pincode: '',
   });
 
+  // Auth state (inline OTP for step 3 gate)
   const [authMethod, setAuthMethod] = useState<'phone' | 'email'>('phone');
-  const [authStep, setAuthStep] = useState<'input' | 'otp' | 'email-sent'>('input');
+  const [authStep, setAuthStep] = useState<'credentials' | 'otp' | 'done'>('credentials');
   const [phoneInput, setPhoneInput] = useState('');
   const [emailInput, setEmailInput] = useState('');
   const [otpInput, setOtpInput] = useState('');
@@ -88,10 +94,19 @@ export default function PrintPage() {
       return { printingCost: 0, bindingCost: 0, photoCost: 0, laminationCost: 0, itemTotal: 0, perPageRate: 0, totalPages: 0 };
     }
     const mockItem = {
-      id: 'preview', fileName: 'preview', fileType: 'pdf', fileSize: 0,
-      pages: totalPages, copies: options.copies, printType: options.printType,
-      side: options.side, orientation: options.orientation, paperGsm: options.paperGsm,
-      binding: options.binding, lamination: options.lamination, premiumPhoto: options.premiumPhoto,
+      id: 'preview',
+      fileName: 'preview',
+      fileType: 'pdf',
+      fileSize: 0,
+      pages: totalPages,
+      copies: options.copies,
+      printType: options.printType,
+      side: options.side,
+      orientation: options.orientation,
+      paperGsm: options.paperGsm,
+      binding: options.binding,
+      lamination: options.lamination,
+      premiumPhoto: options.premiumPhoto,
       notes: options.notes,
     };
     const { printingCost, bindingCost, photoCost, laminationCost, itemTotal } = calculateItemPriceLocal(mockItem);
@@ -102,7 +117,8 @@ export default function PrintPage() {
       photoCost: Math.round(photoCost * 100) / 100,
       laminationCost: Math.round(laminationCost * 100) / 100,
       itemTotal: Math.round(itemTotal * 100) / 100,
-      perPageRate, totalPages,
+      perPageRate,
+      totalPages,
     };
   }, [files, options]);
 
@@ -120,23 +136,37 @@ export default function PrintPage() {
     setFiles(reordered);
   }, []);
 
+  // Add files to cart and proceed to address step
   const proceedToAddress = () => {
     clearCart();
     files.forEach((file) => {
       const fileItem = {
-        id: file.id, fileName: file.name, fileType: file.type, fileSize: file.size,
-        pages: file.pages, copies: options.copies, printType: options.printType,
-        side: options.side, orientation: options.orientation, paperGsm: options.paperGsm,
-        binding: options.binding, lamination: options.lamination, premiumPhoto: options.premiumPhoto,
+        id: file.id,
+        fileName: file.name,
+        fileType: file.type,
+        fileSize: file.size,
+        pages: file.pages,
+        copies: options.copies,
+        printType: options.printType,
+        side: options.side,
+        orientation: options.orientation,
+        paperGsm: options.paperGsm,
+        binding: options.binding,
+        lamination: options.lamination,
+        premiumPhoto: options.premiumPhoto,
         notes: options.notes,
       };
       const { itemTotal: fileTotal } = calculateItemPriceLocal(fileItem);
-      const item: OrderItem = { ...fileItem, price: Math.round(fileTotal * 100) / 100 };
+      const item: OrderItem = {
+        ...fileItem,
+        price: Math.round(fileTotal * 100) / 100,
+      };
       addItem(item, file.file);
     });
     setStep(3);
   };
 
+  // OTP timer
   useEffect(() => {
     if (otpTimer > 0) {
       const t = setTimeout(() => setOtpTimer(otpTimer - 1), 1000);
@@ -146,26 +176,43 @@ export default function PrintPage() {
 
   const switchAuthMethod = (m: 'phone' | 'email') => {
     setAuthMethod(m);
-    setAuthStep('input');
+    setAuthStep('credentials');
     setOtpInput('');
   };
 
   const handleSendOtp = async () => {
-    const cleaned = phoneInput.replace(/\D/g, '');
-    if (cleaned.length !== 10) {
-      toast.error('Enter a valid 10-digit mobile number.');
-      return;
+    if (authMethod === 'email') {
+      if (!emailInput || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailInput)) {
+        toast.error('Please enter a valid email address.');
+        return;
+      }
+      setAuthBusy(true);
+      const { error } = await sendEmailOtp(emailInput);
+      setAuthBusy(false);
+      if (error) {
+        toast.error(error);
+        return;
+      }
+      setAuthStep('otp');
+      setOtpTimer(30);
+      toast.success('Verification code sent to your email.');
+    } else {
+      const cleaned = phoneInput.replace(/\D/g, '');
+      if (cleaned.length !== 10) {
+        toast.error('Enter a valid 10-digit mobile number.');
+        return;
+      }
+      setAuthBusy(true);
+      const { error } = await sendPhoneOtp(cleaned, RECAPTCHA_ID);
+      setAuthBusy(false);
+      if (error) {
+        toast.error(error);
+        return;
+      }
+      setAuthStep('otp');
+      setOtpTimer(30);
+      toast.success('OTP sent to +91 ' + cleaned);
     }
-    setAuthBusy(true);
-    const { error } = await sendOtp('phone', cleaned);
-    setAuthBusy(false);
-    if (error) {
-      toast.error(error);
-      return;
-    }
-    setAuthStep('otp');
-    setOtpTimer(30);
-    toast.success('OTP sent to +91 ' + cleaned);
   };
 
   const handleVerifyOtp = async () => {
@@ -174,30 +221,17 @@ export default function PrintPage() {
       return;
     }
     setAuthBusy(true);
-    const { error } = await verifyOtp('phone', phoneInput.replace(/\D/g, ''), otpInput);
+    const { error } =
+      authMethod === 'email'
+        ? await verifyEmailOtp(emailInput, otpInput)
+        : await verifyPhoneOtp(otpInput);
     setAuthBusy(false);
     if (error) {
       toast.error(error);
       return;
     }
-    setAuthStep('input');
+    setAuthStep('done');
     toast.success('Login successful!');
-  };
-
-  const handleSendEmailLink = async () => {
-    if (!emailInput || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailInput)) {
-      toast.error('Please enter a valid email address.');
-      return;
-    }
-    setAuthBusy(true);
-    const { error } = await sendOtp('email', emailInput);
-    setAuthBusy(false);
-    if (error) {
-      toast.error(error);
-      return;
-    }
-    setAuthStep('email-sent');
-    toast.success('OTP sent to your email.');
   };
 
   return (
@@ -267,6 +301,7 @@ export default function PrintPage() {
                 </p>
 
                 <div className="space-y-6">
+                  {/* Print Type */}
                   <div>
                     <Label className="mb-2 block">Print Type</Label>
                     <div className="grid grid-cols-2 gap-3">
@@ -289,6 +324,7 @@ export default function PrintPage() {
                     </div>
                   </div>
 
+                  {/* Side */}
                   <div>
                     <Label className="mb-2 block">Print Side</Label>
                     <div className="grid grid-cols-2 gap-3">
@@ -311,6 +347,7 @@ export default function PrintPage() {
                     </div>
                   </div>
 
+                  {/* Print Orientation */}
                   <div>
                     <Label className="mb-2 block">Print Orientation</Label>
                     <div className="grid grid-cols-2 gap-3">
@@ -333,6 +370,7 @@ export default function PrintPage() {
                     </div>
                   </div>
 
+                  {/* Copies + GSM */}
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div>
                       <Label className="mb-2 block">Copies</Label>
@@ -365,6 +403,7 @@ export default function PrintPage() {
                     </div>
                   </div>
 
+                  {/* Binding */}
                   <div>
                     <Label className="mb-2 block">Binding</Label>
                     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -384,6 +423,7 @@ export default function PrintPage() {
                     </div>
                   </div>
 
+                  {/* Lamination */}
                   <div>
                     <Label className="mb-2 block">Lamination</Label>
                     <div className="grid grid-cols-2 gap-3">
@@ -405,6 +445,7 @@ export default function PrintPage() {
                     </div>
                   </div>
 
+                  {/* Premium Photo */}
                   <div>
                     <Label className="mb-2 block">Premium Photo Prints</Label>
                     <div className="grid grid-cols-2 gap-3">
@@ -427,6 +468,7 @@ export default function PrintPage() {
                     </div>
                   </div>
 
+                  {/* Notes */}
                   <div>
                     <Label className="mb-2 block">Custom Notes (optional)</Label>
                     <Textarea
@@ -439,6 +481,7 @@ export default function PrintPage() {
                 </div>
               </div>
 
+              {/* Live Price Card */}
               <div className="sticky bottom-4 z-10 rounded-2xl border border-primary/20 bg-card p-5 shadow-glow">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -466,6 +509,7 @@ export default function PrintPage() {
           {/* Step 3: Address (with inline auth gate) */}
           {step === 3 && (
             <div className="animate-fade-in space-y-6">
+              {/* Auth gate — shown if not logged in */}
               {!user && (
                 <div className="rounded-3xl border-2 border-primary bg-card p-6 shadow-sm">
                   <div className="mb-4 flex items-center gap-3">
@@ -475,9 +519,10 @@ export default function PrintPage() {
                     <h2 className="font-display text-lg font-bold">Login Required</h2>
                   </div>
                   <p className="mb-4 text-sm text-muted-foreground">
-                    Enter your phone number or email to receive a verification code.
+                    Verify your phone or email to continue with the order.
                   </p>
 
+                  {/* Phone / Email tab switcher */}
                   <div className="mb-4 grid grid-cols-2 gap-1 rounded-xl bg-muted p-1">
                     <button
                       onClick={() => switchAuthMethod('phone')}
@@ -499,43 +544,66 @@ export default function PrintPage() {
                     </button>
                   </div>
 
-                  {authMethod === 'phone' && authStep === 'input' && (
+                  {authStep === 'credentials' && (
                     <div className="space-y-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="auth-phone">Mobile Number</Label>
-                        <div className="flex items-center gap-2">
-                          <span className="flex h-10 items-center rounded-lg border border-border bg-muted/50 px-3 text-sm font-medium text-muted-foreground">
-                            +91
-                          </span>
-                          <Input
-                            id="auth-phone"
-                            value={phoneInput}
-                            onChange={(e) => setPhoneInput(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                            placeholder="10-digit mobile number"
-                            maxLength={10}
-                            className="flex-1"
-                          />
+                      {authMethod === 'email' ? (
+                        <div className="space-y-2">
+                          <Label htmlFor="auth-email">Email Address</Label>
+                          <div className="relative">
+                            <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                            <Input
+                              id="auth-email"
+                              type="email"
+                              value={emailInput}
+                              onChange={(e) => setEmailInput(e.target.value)}
+                              placeholder="you@example.com"
+                              className="pl-10"
+                            />
+                          </div>
                         </div>
-                      </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <Label htmlFor="auth-phone">Mobile Number</Label>
+                          <div className="flex items-center gap-2">
+                            <span className="flex h-10 items-center rounded-lg border border-border bg-muted/50 px-3 text-sm font-medium text-muted-foreground">
+                              +91
+                            </span>
+                            <Input
+                              id="auth-phone"
+                              value={phoneInput}
+                              onChange={(e) => setPhoneInput(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                              placeholder="10-digit mobile number"
+                              maxLength={10}
+                              className="flex-1"
+                            />
+                          </div>
+                        </div>
+                      )}
                       <Button
                         onClick={handleSendOtp}
-                        disabled={authBusy || otpSending || phoneInput.length !== 10}
+                        disabled={authBusy || otpSending || (authMethod === 'phone' ? phoneInput.length !== 10 : !emailInput)}
                         className="w-full gap-2"
                       >
                         {authBusy || otpSending ? (
-                          <><Loader2 className="h-4 w-4 animate-spin" /> Sending OTP...</>
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" /> Sending code...
+                          </>
                         ) : (
-                          <><Smartphone className="h-4 w-4" /> Send OTP</>
+                          <>
+                            {authMethod === 'email' ? <Mail className="h-4 w-4" /> : <Smartphone className="h-4 w-4" />} Send Verification Code
+                          </>
                         )}
                       </Button>
                     </div>
                   )}
 
-                  {authMethod === 'phone' && authStep === 'otp' && (
+                  {authStep === 'otp' && (
                     <div className="space-y-4">
                       <div className="rounded-lg bg-primary/5 p-3 text-sm text-muted-foreground">
                         Enter the 6-digit code sent to{' '}
-                        <span className="font-semibold text-foreground">+91 {phoneInput}</span>
+                        <span className="font-semibold text-foreground">
+                          {authMethod === 'email' ? emailInput : `+91 ${phoneInput}`}
+                        </span>
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="auth-otp">Enter OTP</Label>
@@ -550,17 +618,20 @@ export default function PrintPage() {
                       </div>
                       <div className="flex items-center justify-between">
                         <button
-                          onClick={() => { setAuthStep('input'); setOtpInput(''); }}
+                          onClick={() => {
+                            setAuthStep('credentials');
+                            setOtpInput('');
+                          }}
                           className="text-sm text-muted-foreground hover:underline"
                         >
-                          Change number
+                          {authMethod === 'email' ? 'Change email' : 'Change number'}
                         </button>
                         <button
                           onClick={otpTimer === 0 ? handleSendOtp : undefined}
                           disabled={otpTimer > 0 || otpSending}
                           className="text-sm text-primary hover:underline disabled:opacity-50"
                         >
-                          {otpTimer > 0 ? `Resend in ${otpTimer}s` : 'Resend OTP'}
+                          {otpTimer > 0 ? `Resend in ${otpTimer}s` : 'Resend code'}
                         </button>
                       </div>
                       <Button
@@ -569,62 +640,23 @@ export default function PrintPage() {
                         className="w-full gap-2"
                       >
                         {authBusy ? (
-                          <><Loader2 className="h-4 w-4 animate-spin" /> Verifying...</>
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" /> Verifying...
+                          </>
                         ) : (
-                          <><Check className="h-4 w-4" /> Verify &amp; Login</>
+                          <>
+                            <Check className="h-4 w-4" /> Verify & Login
+                          </>
                         )}
                       </Button>
                     </div>
                   )}
 
-                  {authMethod === 'email' && authStep === 'input' && (
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="auth-email">Email Address</Label>
-                        <div className="relative">
-                          <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                          <Input
-                            id="auth-email"
-                            type="email"
-                            value={emailInput}
-                            onChange={(e) => setEmailInput(e.target.value)}
-                            placeholder="you@example.com"
-                            className="pl-10"
-                          />
-                        </div>
-                      </div>
-                      <Button
-                        onClick={handleSendEmailLink}
-                        disabled={authBusy || otpSending || !emailInput}
-                        className="w-full gap-2"
-                      >
-                        {authBusy || otpSending ? (
-                          <><Loader2 className="h-4 w-4 animate-spin" /> Sending OTP...</>
-                        ) : (
-                          <><Mail className="h-4 w-4" /> Send OTP</>
-                        )}
-                      </Button>
-                    </div>
-                  )}
-
-                  {authMethod === 'email' && authStep === 'email-sent' && (
-                    <div className="space-y-4 text-center">
-                      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10">
-                        <MailCheck className="h-7 w-7 text-emerald-600" />
-                      </div>
-                      <p className="text-sm text-muted-foreground">
-                        We sent a 6-digit OTP to{' '}
-                        <span className="font-semibold text-foreground">{emailInput}</span>.
-                        Enter the code from your email to sign in.
-                      </p>
-                      <Button variant="outline" className="w-full gap-2" onClick={() => setAuthStep('input')}>
-                        <ArrowLeft className="h-4 w-4" /> Use a different email
-                      </Button>
-                    </div>
-                  )}
+                  <div id={RECAPTCHA_ID} className="mt-2 min-h-[1px]" />
                 </div>
               )}
 
+              {/* Logged-in confirmation */}
               {user && (
                 <div className="flex items-center gap-3 rounded-2xl bg-emerald-500/10 p-4">
                   <ShieldCheck className="h-5 w-5 text-emerald-600" />
@@ -637,6 +669,7 @@ export default function PrintPage() {
                 </div>
               )}
 
+              {/* Address form — always shown, fresh for every order */}
               <StepAddress
                 initial={addressData}
                 onBack={() => setStep(2)}
@@ -648,10 +681,12 @@ export default function PrintPage() {
             </div>
           )}
 
+          {/* Step 4: Shipping + Coupon */}
           {step === 4 && (
             <StepShipping onBack={() => setStep(3)} onNext={() => setStep(5)} />
           )}
 
+          {/* Step 5: Final Checkout + Payment */}
           {step === 5 && (
             <StepPayment address={addressData} onBack={() => setStep(4)} />
           )}

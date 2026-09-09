@@ -32,6 +32,7 @@ import {
   updateAddress,
   deleteAddress,
   isFirebaseConfigured,
+  isSupabaseConfigured,
   type Order,
   type Address,
 } from '@/lib/database';
@@ -76,7 +77,7 @@ export default function DashboardPage() {
       navigate('/login?redirect=/dashboard');
       return;
     }
-    if (!isFirebaseConfigured) {
+    if (!isFirebaseConfigured && !isSupabaseConfigured) {
       setLoading(false);
       return;
     }

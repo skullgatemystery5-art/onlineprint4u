@@ -19,9 +19,6 @@ import {
   MessageCircle,
   Weight,
   Lock,
-  Mail,
-  Phone,
-  Timer,
 } from 'lucide-react';
 import { Header } from '@/components/header';
 import { Footer } from '@/components/footer';
@@ -40,7 +37,7 @@ import {
   type Address,
 } from '@/lib/database';
 import { openWhatsAppBill } from '@/lib/whatsapp';
-import { uploadOrderFile } from '@/lib/database';
+import { uploadOrderFile } from '@/lib/storage';
 import { formatINR } from '@/lib/pricing';
 import { siteConfig, advancePercentage } from '@/lib/site-config';
 import { isValidWhatsAppPhone } from '@/lib/whatsapp';
@@ -55,7 +52,7 @@ type CheckoutSection = 'auth' | 'address' | 'delivery' | 'payment' | 'review';
 
 export default function CheckoutPage() {
   const navigate = useNavigate();
-  const { user, profile, sendOtp, verifyOtp, otpSending } = useAuth();
+  const { user, profile, sendPhoneOtp, verifyPhoneOtp } = useAuth();
   const {
     items,
     fileObjects,
@@ -74,13 +71,13 @@ export default function CheckoutPage() {
 
   const [showPolicy, setShowPolicy] = useState(false);
 
-  // --- Auth state (unified phone/email OTP) ---
-  const [authMethod, setAuthMethod] = useState<'phone' | 'email'>('phone');
-  const [authStep, setAuthStep] = useState<'input' | 'otp' | 'done'>('input');
+  // --- Auth state (embedded phone OTP) ---
+  const [authStep, setAuthStep] = useState<'phone' | 'otp' | 'done'>('phone');
   const [phoneInput, setPhoneInput] = useState('');
-  const [emailInput, setEmailInput] = useState('');
   const [otpInput, setOtpInput] = useState('');
   const [fullName, setFullName] = useState('');
+  const [emailInput] = useState('');
+  const [, setOtpSent] = useState(false);
   const [otpTimer, setOtpTimer] = useState(0);
   const [authBusy, setAuthBusy] = useState(false);
 
@@ -184,48 +181,24 @@ export default function CheckoutPage() {
     review: null,
   };
 
-  // --- Unified OTP handlers ---
-  const switchAuthMethod = (m: 'phone' | 'email') => {
-    setAuthMethod(m);
-    setAuthStep('input');
-    setOtpInput('');
-  };
-
+  // --- Phone OTP handlers ---
   const handleSendOtp = async () => {
-    if (authMethod === 'phone') {
-      const cleaned = phoneInput.replace(/\D/g, '');
-      if (cleaned.length !== 10) {
-        toast.error('Enter a valid 10-digit mobile number.');
-        return;
-      }
-      setAuthBusy(true);
-      const { error, cooldownSec } = await sendOtp('phone', cleaned);
-      setAuthBusy(false);
-      if (error) {
-        toast.error(error);
-        if (cooldownSec) setOtpTimer(cooldownSec);
-        return;
-      }
-      setAuthStep('otp');
-      setOtpTimer(30);
-      toast.success('OTP sent to +91 ' + cleaned);
-    } else {
-      if (!emailInput || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailInput)) {
-        toast.error('Please enter a valid email address.');
-        return;
-      }
-      setAuthBusy(true);
-      const { error, cooldownSec } = await sendOtp('email', emailInput.trim());
-      setAuthBusy(false);
-      if (error) {
-        toast.error(error);
-        if (cooldownSec) setOtpTimer(cooldownSec);
-        return;
-      }
-      setAuthStep('otp');
-      setOtpTimer(30);
-      toast.success('Verification code sent to ' + emailInput);
+    const cleaned = phoneInput.replace(/\D/g, '');
+    if (cleaned.length !== 10) {
+      toast.error('Enter a valid 10-digit mobile number.');
+      return;
     }
+    setAuthBusy(true);
+    const { error } = await sendPhoneOtp(cleaned, 'checkout-recaptcha-container');
+    setAuthBusy(false);
+    if (error) {
+      toast.error(error);
+      return;
+    }
+    setOtpSent(true);
+    setAuthStep('otp');
+    setOtpTimer(30);
+    toast.success('OTP sent to +91 ' + cleaned);
   };
 
   const handleVerifyOtp = async () => {
@@ -233,9 +206,8 @@ export default function CheckoutPage() {
       toast.error('Enter the 6-digit OTP.');
       return;
     }
-    const contact = authMethod === 'phone' ? phoneInput.replace(/\D/g, '') : emailInput.trim();
     setAuthBusy(true);
-    const { error } = await verifyOtp(authMethod, contact, otpInput);
+    const { error } = await verifyPhoneOtp(otpInput);
     setAuthBusy(false);
     if (error) {
       toast.error(error);
@@ -419,6 +391,21 @@ export default function CheckoutPage() {
         // Non-blocking
       }
 
+      // Send dual notifications (WhatsApp + Email) via edge function
+      try {
+        const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/order-notifications`;
+        await fetch(apiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          },
+          body: JSON.stringify(order),
+        });
+      } catch {
+        // Non-blocking
+      }
+
       clearCart();
       clearTimeout(timeoutId);
       toast.success('Order placed successfully!');
@@ -498,30 +485,7 @@ export default function CheckoutPage() {
 
               {!user && (
                 <div className="space-y-4">
-                  {/* Method switcher */}
-                  <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted p-1">
-                    <button
-                      onClick={() => switchAuthMethod('phone')}
-                      className={cn(
-                        'flex items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-medium transition-colors',
-                        authMethod === 'phone' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-                      )}
-                    >
-                      <Phone className="h-4 w-4" /> Phone
-                    </button>
-                    <button
-                      onClick={() => switchAuthMethod('email')}
-                      className={cn(
-                        'flex items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-medium transition-colors',
-                        authMethod === 'email' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-                      )}
-                    >
-                      <Mail className="h-4 w-4" /> Email
-                    </button>
-                  </div>
-
-                  {/* Phone: input */}
-                  {authMethod === 'phone' && authStep === 'input' && (
+                  {authStep === 'phone' && (
                     <>
                       <div className="grid gap-4 sm:grid-cols-2">
                         <div className="space-y-2">
@@ -552,10 +516,10 @@ export default function CheckoutPage() {
                       </div>
                       <Button
                         onClick={handleSendOtp}
-                        disabled={authBusy || otpSending || phoneInput.length !== 10}
+                        disabled={authBusy || phoneInput.length !== 10}
                         className="w-full gap-2"
                       >
-                        {authBusy || otpSending ? (
+                        {authBusy ? (
                           <><Loader2 className="h-4 w-4 animate-spin" /> Sending OTP...</>
                         ) : (
                           <><Smartphone className="h-4 w-4" /> Send OTP</>
@@ -564,8 +528,7 @@ export default function CheckoutPage() {
                     </>
                   )}
 
-                  {/* Phone: OTP */}
-                  {authMethod === 'phone' && authStep === 'otp' && (
+                  {authStep === 'otp' && (
                     <>
                       <div className="rounded-lg bg-primary/5 p-3 text-sm text-muted-foreground">
                         Enter the 6-digit OTP sent to <span className="font-semibold text-foreground">+91 {phoneInput}</span>
@@ -583,14 +546,14 @@ export default function CheckoutPage() {
                       </div>
                       <div className="flex items-center justify-between">
                         <button
-                          onClick={() => { setAuthStep('input'); setOtpInput(''); }}
+                          onClick={() => { setAuthStep('phone'); setOtpSent(false); setOtpInput(''); }}
                           className="text-sm text-muted-foreground hover:underline"
                         >
                           Change number
                         </button>
                         <button
                           onClick={otpTimer === 0 ? handleSendOtp : undefined}
-                          disabled={otpTimer > 0 || otpSending}
+                          disabled={otpTimer > 0}
                           className="text-sm text-primary hover:underline disabled:opacity-50"
                         >
                           {otpTimer > 0 ? `Resend in ${otpTimer}s` : 'Resend OTP'}
@@ -609,85 +572,11 @@ export default function CheckoutPage() {
                       </Button>
                     </>
                   )}
-
-                  {/* Email: input */}
-                  {authMethod === 'email' && authStep === 'input' && (
-                    <>
-                      <div className="space-y-2">
-                        <Label htmlFor="auth-email">Email Address</Label>
-                        <div className="relative">
-                          <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                          <Input
-                            id="auth-email"
-                            type="email"
-                            value={emailInput}
-                            onChange={(e) => setEmailInput(e.target.value)}
-                            placeholder="you@example.com"
-                            className="pl-10"
-                          />
-                        </div>
-                      </div>
-                      <Button
-                        onClick={handleSendOtp}
-                        disabled={authBusy || otpSending || !emailInput}
-                        className="w-full gap-2"
-                      >
-                        {authBusy || otpSending ? (
-                          <><Loader2 className="h-4 w-4 animate-spin" /> Sending code...</>
-                        ) : (
-                          <><Mail className="h-4 w-4" /> Send Verification Code</>
-                        )}
-                      </Button>
-                    </>
-                  )}
-
-                  {/* Email: OTP step */}
-                  {authMethod === 'email' && authStep === 'otp' && (
-                    <>
-                      <div className="rounded-lg bg-primary/5 p-3 text-sm text-muted-foreground">
-                        Enter the 6-digit code sent to <span className="font-semibold text-foreground">{emailInput}</span>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="auth-email-otp">Enter OTP</Label>
-                        <Input
-                          id="auth-email-otp"
-                          value={otpInput}
-                          onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                          placeholder="6-digit code"
-                          maxLength={6}
-                          className="text-center text-lg tracking-widest"
-                        />
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <button
-                          onClick={() => { setAuthStep('input'); setOtpInput(''); }}
-                          className="text-sm text-muted-foreground hover:underline"
-                        >
-                          Change email
-                        </button>
-                        <button
-                          onClick={otpTimer === 0 ? handleSendOtp : undefined}
-                          disabled={otpTimer > 0 || otpSending}
-                          className="text-sm text-primary hover:underline disabled:opacity-50"
-                        >
-                          {otpTimer > 0 ? `Resend in ${otpTimer}s` : 'Resend code'}
-                        </button>
-                      </div>
-                      <Button
-                        onClick={handleVerifyOtp}
-                        disabled={authBusy || otpInput.length !== 6}
-                        className="w-full gap-2"
-                      >
-                        {authBusy ? (
-                          <><Loader2 className="h-4 w-4 animate-spin" /> Verifying...</>
-                        ) : (
-                          <><Check className="h-4 w-4" /> Verify & Login</>
-                        )}
-                      </Button>
-                    </>
-                  )}
                 </div>
               )}
+
+              {/* Hidden reCAPTCHA container for Firebase Phone Auth */}
+              {!user && <div id="checkout-recaptcha-container" className="min-h-[1px]" />}
 
               {user && (
                 <div className="flex items-center gap-3 rounded-lg bg-emerald-500/10 p-4">

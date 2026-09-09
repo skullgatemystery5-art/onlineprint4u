@@ -26,7 +26,7 @@ import {
   type OrderItem,
 } from '@/lib/database';
 import { openWhatsAppBill } from '@/lib/whatsapp';
-import { uploadOrderFile } from '@/lib/database';
+import { uploadOrderFile } from '@/lib/storage';
 import { formatINR } from '@/lib/pricing';
 import { siteConfig, advancePercentage } from '@/lib/site-config';
 import { isValidWhatsAppPhone } from '@/lib/whatsapp';
