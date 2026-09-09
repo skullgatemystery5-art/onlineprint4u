@@ -32,10 +32,14 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.onOrderCreated = exports.sendPasswordReset = exports.verifyOtp = exports.sendOtp = void 0;
 const functions = __importStar(require("firebase-functions"));
 const admin = __importStar(require("firebase-admin"));
+const cors_1 = __importDefault(require("cors"));
 admin.initializeApp();
 // ============================
 // Firebase Environment Secrets (Cloud Secret Manager)
@@ -198,58 +202,90 @@ async function sendOtpSms(phone, code) {
         return `error:${String(e)}`;
     }
 }
+const corsHandler = (0, cors_1.default)({ origin: true });
+function getHttpErrorStatus(code) {
+    if (code === "invalid-argument")
+        return 400;
+    if (code === "not-found")
+        return 404;
+    if (code === "resource-exhausted")
+        return 429;
+    return 500;
+}
 exports.sendOtp = functions
     .runWith({ secrets: smtpSecrets })
-    .https.onCall(async (data) => {
-    const channel = data?.channel;
-    const contact = (data?.contact || "").trim();
-    if (!channel || !contact) {
-        throw new functions.https.HttpsError("invalid-argument", "Channel and contact are required.");
+    .https.onRequest((req, res) => {
+    if (req.method === "OPTIONS") {
+        corsHandler(req, res, () => res.status(204).send(""));
+        return;
     }
-    if (channel === "phone") {
-        const digits = contact.replace(/\D/g, "");
-        if (digits.length !== 10 && digits.length !== 12) {
-            throw new functions.https.HttpsError("invalid-argument", "Invalid phone number.");
+    corsHandler(req, res, async () => {
+        if (req.method !== "POST") {
+            res.status(405).json({ error: "Method not allowed" });
+            return;
         }
-    }
-    else if (channel === "email") {
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact)) {
-            throw new functions.https.HttpsError("invalid-argument", "Invalid email address.");
+        try {
+            const data = (req.body || {});
+            const channel = data.channel;
+            const contact = (data.contact || "").trim();
+            if (!channel || !contact) {
+                throw new functions.https.HttpsError("invalid-argument", "Channel and contact are required.");
+            }
+            if (channel === "phone") {
+                const digits = contact.replace(/\D/g, "");
+                if (digits.length !== 10 && digits.length !== 12) {
+                    throw new functions.https.HttpsError("invalid-argument", "Invalid phone number.");
+                }
+            }
+            else if (channel === "email") {
+                if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact)) {
+                    throw new functions.https.HttpsError("invalid-argument", "Invalid email address.");
+                }
+            }
+            else {
+                throw new functions.https.HttpsError("invalid-argument", "Channel must be 'phone' or 'email'.");
+            }
+            // Rate limiting: check last OTP request for this contact
+            const otpRef = admin.firestore().collection("otp_codes").doc(`${channel}:${contact.toLowerCase()}`);
+            const existing = await otpRef.get();
+            if (existing.exists) {
+                const existingData = existing.data();
+                const elapsed = Date.now() - (existingData?.createdAt?.toMillis() || 0);
+                if (elapsed < 30000) {
+                    throw new functions.https.HttpsError("resource-exhausted", "Please wait 30 seconds before requesting another code.");
+                }
+            }
+            const code = generateOtp();
+            const expiresAt = admin.firestore.Timestamp.fromMillis(Date.now() + 5 * 60 * 1000);
+            await otpRef.set({
+                code,
+                channel,
+                contact,
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                expiresAt,
+                attempts: 0,
+            });
+            let sendResult;
+            if (channel === "email") {
+                sendResult = await sendOtpEmail(contact, code);
+            }
+            else {
+                const fullPhone = contact.startsWith("+") ? contact.replace("+", "") : `91${contact.replace(/\D/g, "")}`;
+                sendResult = await sendOtpSms(fullPhone, code);
+            }
+            console.log(`OTP sent for ${channel}:${contact}, result=${sendResult}`);
+            res.status(200).json({ success: true, channel, sendResult });
         }
-    }
-    else {
-        throw new functions.https.HttpsError("invalid-argument", "Channel must be 'phone' or 'email'.");
-    }
-    // Rate limiting: check last OTP request for this contact
-    const otpRef = admin.firestore().collection("otp_codes").doc(`${channel}:${contact.toLowerCase()}`);
-    const existing = await otpRef.get();
-    if (existing.exists) {
-        const existingData = existing.data();
-        const elapsed = Date.now() - (existingData?.createdAt?.toMillis() || 0);
-        if (elapsed < 30000) {
-            throw new functions.https.HttpsError("resource-exhausted", "Please wait 30 seconds before requesting another code.");
+        catch (error) {
+            const httpError = error;
+            res.status(getHttpErrorStatus(httpError.code)).json({
+                error: {
+                    status: httpError.code || "internal",
+                    message: httpError.message || "Failed to send verification code.",
+                },
+            });
         }
-    }
-    const code = generateOtp();
-    const expiresAt = admin.firestore.Timestamp.fromMillis(Date.now() + 5 * 60 * 1000);
-    await otpRef.set({
-        code,
-        channel,
-        contact,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        expiresAt,
-        attempts: 0,
     });
-    let sendResult;
-    if (channel === "email") {
-        sendResult = await sendOtpEmail(contact, code);
-    }
-    else {
-        const fullPhone = contact.startsWith("+") ? contact.replace("+", "") : `91${contact.replace(/\D/g, "")}`;
-        sendResult = await sendOtpSms(fullPhone, code);
-    }
-    console.log(`OTP sent for ${channel}:${contact}, result=${sendResult}`);
-    return { success: true, channel, sendResult };
 });
 exports.verifyOtp = functions
     .runWith({ secrets: smtpSecrets })

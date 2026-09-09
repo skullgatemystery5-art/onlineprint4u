@@ -1,5 +1,6 @@
 import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
+import cors from "cors";
 
 admin.initializeApp();
 
@@ -232,11 +233,33 @@ interface OtpVerifyData {
   code: string;
 }
 
+const corsHandler = cors({ origin: true });
+
+function getHttpErrorStatus(code: string | undefined): number {
+  if (code === "invalid-argument") return 400;
+  if (code === "not-found") return 404;
+  if (code === "resource-exhausted") return 429;
+  return 500;
+}
+
 export const sendOtp = functions
   .runWith({ secrets: smtpSecrets })
-  .https.onCall(async (data: OtpRequestData) => {
-  const channel = data?.channel;
-  const contact = (data?.contact || "").trim();
+  .https.onRequest((req, res) => {
+    if (req.method === "OPTIONS") {
+      corsHandler(req, res, () => res.status(204).send(""));
+      return;
+    }
+
+    corsHandler(req, res, async () => {
+      if (req.method !== "POST") {
+        res.status(405).json({ error: "Method not allowed" });
+        return;
+      }
+
+      try {
+        const data = (req.body || {}) as Partial<OtpRequestData>;
+        const channel = data.channel;
+        const contact = (data.contact || "").trim();
 
   if (!channel || !contact) {
     throw new functions.https.HttpsError("invalid-argument", "Channel and contact are required.");
@@ -286,9 +309,19 @@ export const sendOtp = functions
     sendResult = await sendOtpSms(fullPhone, code);
   }
 
-  console.log(`OTP sent for ${channel}:${contact}, result=${sendResult}`);
-  return { success: true, channel, sendResult };
-});
+        console.log(`OTP sent for ${channel}:${contact}, result=${sendResult}`);
+        res.status(200).json({ success: true, channel, sendResult });
+      } catch (error) {
+        const httpError = error as { code?: string; message?: string };
+        res.status(getHttpErrorStatus(httpError.code)).json({
+          error: {
+            status: httpError.code || "internal",
+            message: httpError.message || "Failed to send verification code.",
+          },
+        });
+      }
+    });
+  });
 
 export const verifyOtp = functions
   .runWith({ secrets: smtpSecrets })

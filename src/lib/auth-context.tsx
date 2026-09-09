@@ -123,9 +123,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       setOtpSending(true);
       try {
-        const functions = getFunctions(app, 'us-central1');
-        const sendOtpFn = httpsCallable(functions, 'sendOtp');
-        await sendOtpFn({ channel, contact });
+        const projectId = app.options.projectId;
+        const response = await fetch(`https://us-central1-${projectId}.cloudfunctions.net/sendOtp`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ channel, contact }),
+        });
+        const result = (await response.json()) as {
+          error?: { status?: string; message?: string };
+        };
+        if (!response.ok) {
+          const error = result.error;
+          if (error?.status === 'resource-exhausted') {
+            return {
+              error: error.message || 'Too many requests. Please wait 30 seconds before trying again.',
+              cooldownSec: 30,
+            };
+          }
+          return { error: error?.message || 'Failed to send verification code.' };
+        }
         return { error: null };
       } catch (err) {
         const error = err as { code?: string; message?: string };
