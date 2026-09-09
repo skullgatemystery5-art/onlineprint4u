@@ -50,11 +50,11 @@ const steps = [
   { num: 5, icon: CreditCard, label: 'Checkout' },
 ];
 
-const RECAPTCHA_ID = 'print-recaptcha-container';
+
 
 export default function PrintPage() {
   const navigate = useNavigate();
-  const { user, profile, sendPhoneOtp, verifyPhoneOtp, sendEmailOtp, otpSending } = useAuth();
+  const { user, profile, sendOtp, verifyOtp, otpSending } = useAuth();
   const { addItem, clearCart } = useCart();
   const [step, setStep] = useState(1);
   const [files, setFiles] = useState<UploadedFile[]>([]);
@@ -120,24 +120,6 @@ export default function PrintPage() {
     setFiles(reordered);
   }, []);
 
-  useEffect(() => {
-    let container = document.getElementById(RECAPTCHA_ID);
-    if (!container) {
-      container = document.createElement('div');
-      container.id = RECAPTCHA_ID;
-      container.style.position = 'fixed';
-      container.style.bottom = '0';
-      container.style.left = '0';
-      container.style.zIndex = '0';
-      document.body.appendChild(container);
-    }
-    return () => {
-      if (container && container.parentElement) {
-        container.parentElement.removeChild(container);
-      }
-    };
-  }, []);
-
   const proceedToAddress = () => {
     clearCart();
     files.forEach((file) => {
@@ -175,7 +157,7 @@ export default function PrintPage() {
       return;
     }
     setAuthBusy(true);
-    const { error } = await sendPhoneOtp(cleaned, RECAPTCHA_ID);
+    const { error } = await sendOtp('phone', cleaned);
     setAuthBusy(false);
     if (error) {
       toast.error(error);
@@ -192,7 +174,7 @@ export default function PrintPage() {
       return;
     }
     setAuthBusy(true);
-    const { error } = await verifyPhoneOtp(otpInput);
+    const { error } = await verifyOtp('phone', phoneInput.replace(/\D/g, ''), otpInput);
     setAuthBusy(false);
     if (error) {
       toast.error(error);
@@ -208,7 +190,7 @@ export default function PrintPage() {
       return;
     }
     setAuthBusy(true);
-    const { error } = await sendEmailOtp(emailInput);
+    const { error } = await sendOtp('email', emailInput);
     setAuthBusy(false);
     if (error) {
       toast.error(error);
