@@ -45,7 +45,7 @@ export default function AdminLoginPage() {
       return;
     }
     setResetSent(true);
-    toast.success('Password reset link sent!');
+    toast.success('Password reset OTP sent!');
   };
 
   return (
@@ -65,8 +65,8 @@ export default function AdminLoginPage() {
               <ShieldCheck className="h-10 w-10 text-emerald-600" />
             </div>
             <p className="text-sm text-muted-foreground">
-              We have sent a password reset link to <span className="font-semibold text-foreground">{email}</span>.
-              Please check your inbox and follow the instructions.
+              We have sent a password reset OTP to <span className="font-semibold text-foreground">{email}</span>.
+              Please check your inbox for the 6-digit code and follow the instructions.
             </p>
             <Button variant="outline" className="w-full" onClick={() => { setForgotMode(false); setResetSent(false); }}>
               Back to Admin Login
@@ -75,7 +75,7 @@ export default function AdminLoginPage() {
         ) : (
           <form onSubmit={handleReset} className="space-y-4">
             <div className="rounded-lg bg-amber-500/10 p-3 text-sm text-amber-700">
-              Enter your admin email and we'll send you a password reset link.
+              Enter your admin email and we'll send you a password reset OTP.
             </div>
             <div className="space-y-2">
               <Label htmlFor="admin-email">Admin Email</Label>
@@ -93,7 +93,7 @@ export default function AdminLoginPage() {
               </div>
             </div>
             <Button type="submit" className="w-full gap-2" disabled={loading}>
-              {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> Sending...</> : <>Send Reset Link</>}
+              {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> Sending OTP...</> : <>Send Reset OTP</>}
             </Button>
             <button
               type="button"

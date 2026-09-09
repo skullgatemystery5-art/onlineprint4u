@@ -18,13 +18,13 @@ export default function ForgotPasswordPage() {
       return;
     }
     setSent(true);
-    toast.success('Password reset link sent! (demo mode)');
+    toast.success('Password reset OTP sent! (demo mode)');
   };
 
   return (
     <AuthShell
       title="Forgot password"
-      subtitle="Enter your email and we will send you a password reset link."
+      subtitle="Enter your email and we will send you a password reset OTP."
       footer={
         <Link to="/login" className="flex items-center justify-center gap-1.5 font-semibold text-primary hover:underline">
           <ArrowLeft className="h-3.5 w-3.5" /> Back to sign in
@@ -37,8 +37,8 @@ export default function ForgotPasswordPage() {
             <CheckCircle2 className="h-10 w-10 text-emerald-600" />
           </div>
           <p className="text-sm text-muted-foreground">
-            We have sent a password reset link to <span className="font-semibold text-foreground">{email}</span>.
-            Please check your inbox and follow the instructions.
+            We have sent a password reset OTP to <span className="font-semibold text-foreground">{email}</span>.
+            Please check your inbox for the 6-digit code and follow the instructions.
           </p>
           <Link to="/login">
             <Button variant="outline" className="w-full">Back to Sign In</Button>
@@ -62,7 +62,7 @@ export default function ForgotPasswordPage() {
             </div>
           </div>
           <Button type="submit" className="w-full">
-            Send Reset Link
+            Send Reset OTP
           </Button>
         </form>
       )}

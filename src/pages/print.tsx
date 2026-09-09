@@ -215,7 +215,7 @@ export default function PrintPage() {
       return;
     }
     setAuthStep('email-sent');
-    toast.success('Sign-in link sent to your email.');
+    toast.success('OTP sent to your email.');
   };
 
   return (
@@ -617,9 +617,9 @@ export default function PrintPage() {
                         className="w-full gap-2"
                       >
                         {authBusy || otpSending ? (
-                          <><Loader2 className="h-4 w-4 animate-spin" /> Sending link...</>
+                          <><Loader2 className="h-4 w-4 animate-spin" /> Sending OTP...</>
                         ) : (
-                          <><Mail className="h-4 w-4" /> Send Sign-In Link</>
+                          <><Mail className="h-4 w-4" /> Send OTP</>
                         )}
                       </Button>
                     </div>
@@ -631,9 +631,9 @@ export default function PrintPage() {
                         <MailCheck className="h-7 w-7 text-emerald-600" />
                       </div>
                       <p className="text-sm text-muted-foreground">
-                        We sent a sign-in link to{' '}
+                        We sent a 6-digit OTP to{' '}
                         <span className="font-semibold text-foreground">{emailInput}</span>.
-                        Click the link in your email to sign in.
+                        Enter the code from your email to sign in.
                       </p>
                       <Button variant="outline" className="w-full gap-2" onClick={() => setAuthStep('input')}>
                         <ArrowLeft className="h-4 w-4" /> Use a different email
