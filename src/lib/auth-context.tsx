@@ -17,7 +17,6 @@ import {
   signInWithCustomToken,
 } from 'firebase/auth';
 import { firebaseAuth } from './firebase';
-import { supabase, isSupabaseConfigured } from './supabase';
 
 type AuthUser = {
   uid: string;
@@ -67,6 +66,15 @@ function toAuthUser(fbUser: FirebaseUser): AuthUser {
     email: fbUser.email,
     displayName: fbUser.displayName,
   };
+}
+
+function getCloudFunctionUrl(endpoint: string): string {
+  const region = import.meta.env.VITE_FIREBASE_FUNCTIONS_REGION || 'us-central1';
+  const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
+  if (projectId) {
+    return `https://${region}-${projectId}.cloudfunctions.net/${endpoint}`;
+  }
+  return `/${endpoint}`;
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -256,19 +264,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const sendEmailOtp = useCallback(
     async (email: string): Promise<SendOtpResult> => {
-      if (!isSupabaseConfigured || !supabase) {
+      if (!isFirebaseConfigured) {
         return { error: 'Email login is not configured. Please contact support.' };
       }
       setOtpSending(true);
       try {
-        const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/auth-email-otp`;
+        const apiUrl = getCloudFunctionUrl('sendOtp');
         const res = await fetch(apiUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
           },
-          body: JSON.stringify({ action: 'send', email }),
+          body: JSON.stringify({ email }),
         });
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
@@ -295,18 +302,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const verifyEmailOtp = useCallback(
     async (email: string, token: string): Promise<{ error: string | null }> => {
-      if (!isSupabaseConfigured || !supabase) {
+      if (!isFirebaseConfigured || !firebaseAuth) {
         return { error: 'Email login is not configured. Please contact support.' };
       }
       try {
-        const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/auth-email-otp`;
+        const apiUrl = getCloudFunctionUrl('verifyOtp');
         const res = await fetch(apiUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
           },
-          body: JSON.stringify({ action: 'verify', email, otp: token }),
+          body: JSON.stringify({ email, otp: token }),
         });
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
@@ -318,7 +324,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return { error: 'Login failed — no auth token returned. Please contact support.' };
         }
 
-        const userCred = await signInWithCustomToken(firebaseAuth!, data.customToken);
+        const userCred = await signInWithCustomToken(firebaseAuth, data.customToken);
         if (!userCred.user) {
           return { error: 'Login failed — no user returned.' };
         }

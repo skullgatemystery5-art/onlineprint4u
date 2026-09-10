@@ -1,5 +1,0 @@
-[functions.auth-email-otp]
-verify_jwt = false
-
-[functions.order-notifications]
-verify_jwt = false

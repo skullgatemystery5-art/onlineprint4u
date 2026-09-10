@@ -1,18 +1,17 @@
-import { supabase, isSupabaseConfigured } from './supabase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { storage, isFirebaseConfigured } from './firebase';
 
 export type UploadedOrderFile = {
   path: string;
   url: string;
 };
 
-const bucketName = 'order-files';
-
 export async function uploadOrderFile(
   file: File,
   orderId: string,
   itemId: string
 ): Promise<UploadedOrderFile> {
-  if (!isSupabaseConfigured || !supabase) {
+  if (!isFirebaseConfigured || !storage) {
     throw new Error('File storage is not configured.');
   }
 
@@ -20,26 +19,22 @@ export async function uploadOrderFile(
   const safeItemId = itemId.replace(/[^a-zA-Z0-9_-]/g, '_');
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
   const path = `orders/${safeOrderId}/${safeItemId}-${safeName}`;
-  const { error } = await supabase.storage.from(bucketName).upload(path, file, {
-    upsert: true,
+  const storageRef = ref(storage, path);
+
+  await uploadBytes(storageRef, file, {
     contentType: file.type || undefined,
   });
 
-  if (error) {
-    throw new Error(`Unable to upload ${file.name}.`);
-  }
+  const url = await getDownloadURL(storageRef);
 
-  const { data } = supabase.storage.from(bucketName).getPublicUrl(path);
-  if (!data.publicUrl) {
-    throw new Error(`Unable to create a download link for ${file.name}.`);
-  }
-
-  return { path, url: data.publicUrl };
+  return { path, url };
 }
 
 export function getOrderFileUrl(filePathOrUrl: string): string | null {
   if (!filePathOrUrl) return null;
   if (/^https?:\/\//i.test(filePathOrUrl)) return filePathOrUrl;
-  if (!supabase) return null;
-  return supabase.storage.from(bucketName).getPublicUrl(filePathOrUrl).data.publicUrl;
+  if (!storage) return null;
+  // Firebase Storage URLs are constructed from the path via getDownloadURL,
+  // but for stored paths we return the path as-is for admin display
+  return filePathOrUrl;
 }
