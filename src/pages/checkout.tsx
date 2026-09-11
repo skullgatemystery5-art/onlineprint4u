@@ -391,21 +391,6 @@ export default function CheckoutPage() {
         // Non-blocking
       }
 
-      // Send dual notifications (WhatsApp + Email) via edge function
-      try {
-        const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/order-notifications`;
-        await fetch(apiUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          },
-          body: JSON.stringify(order),
-        });
-      } catch {
-        // Non-blocking
-      }
-
       clearCart();
       clearTimeout(timeoutId);
       toast.success('Order placed successfully!');
