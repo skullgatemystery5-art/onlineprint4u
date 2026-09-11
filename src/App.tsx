@@ -21,6 +21,7 @@ const OrderSuccessPage = lazy(() => import('@/pages/order-success'));
 const OrderFailedPage = lazy(() => import('@/pages/order-failed'));
 const ForgotPasswordPage = lazy(() => import('@/pages/forgot-password'));
 const NotFoundPage = lazy(() => import('@/pages/not-found'));
+const CaptchaDemo = lazy(() => import('@/components/captcha-demo'));
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -68,6 +69,7 @@ export default function App() {
               <Route path="/delivery-details" element={<DeliveryDetailsPage />} />
               <Route path="/order/success" element={<OrderSuccessPage />} />
               <Route path="/order/failed" element={<OrderFailedPage />} />
+              <Route path="/captcha" element={<CaptchaDemo />} />
               <Route path="*" element={<NotFoundPage />} />
             </Routes>
           </Suspense>
