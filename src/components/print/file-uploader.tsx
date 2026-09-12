@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
 import { UploadCloud, FileText, X, GripVertical, ImageIcon, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { getPdfPageCount } from '@/lib/pdf-pages';
 
@@ -45,8 +46,20 @@ export function FileUploader({
       if (!fileList) return;
       setLoadingPages(true);
       const incoming = Array.from(fileList);
+      const MAX_FILE_SIZE = 50 * 1024 * 1024;
+      const validFiles = incoming.filter((f) => {
+        if (f.size > MAX_FILE_SIZE) {
+          toast.error(`${f.name} exceeds 50MB limit and was skipped.`);
+          return false;
+        }
+        return true;
+      });
+      if (validFiles.length === 0) {
+        setLoadingPages(false);
+        return;
+      }
       const newFiles: UploadedFile[] = await Promise.all(
-        incoming.map(async (f) => {
+        validFiles.map(async (f) => {
           const ext = f.name.split('.').pop()?.toLowerCase() ?? '';
           let previewUrl: string | undefined;
           if (['jpg', 'jpeg', 'png'].includes(ext)) {

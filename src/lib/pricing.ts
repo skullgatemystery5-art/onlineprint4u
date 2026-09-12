@@ -22,6 +22,11 @@ export const BINDING_OPTIONS: {
 
 export const PREMIUM_PHOTO_RATE = 25;
 
+export const LAMINATION_RATES: Record<string, number> = {
+  none: 0,
+  transparent: 5, // ₹5 per page for transparent lamination
+};
+
 // Hardcoded print-per-page rates keyed by `${gsm}_${printType}_${side}`
 export const PRINT_RATES: Record<string, number> = {
   '70_bw_single': 0.90,
@@ -105,7 +110,8 @@ export function calculateItemPriceLocal(item: Omit<OrderItem, 'price'>): PriceBr
 
   const printingCost = printRate * item.pages * item.copies;
   const bindingCost = bindingRate * item.copies;
-  const laminationCost = 0;
+  const laminationRate = LAMINATION_RATES[item.lamination] ?? 0;
+  const laminationCost = laminationRate * item.pages * item.copies;
   const photoCost = item.premiumPhoto ? PREMIUM_PHOTO_RATE * item.pages * item.copies : 0;
 
   const itemTotal = printingCost + bindingCost + laminationCost + photoCost;

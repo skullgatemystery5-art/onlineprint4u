@@ -48,15 +48,47 @@ type CartContextType = {
 const CartContext = createContext<CartContextType>(null as unknown as CartContextType);
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
-  const [items, setItems] = useState<OrderItem[]>([]);
+  const [items, setItems] = useState<OrderItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('op4u_cart_items');
+      return saved ? JSON.parse(saved) as OrderItem[] : [];
+    } catch {
+      return [];
+    }
+  });
   const [fileObjects, setFileObjects] = useState<Record<string, File>>({});
-  const [coupon, setCoupon] = useState<Coupon | null>(null);
-  const [couponCode, setCouponCode] = useState('');
+  const [coupon, setCoupon] = useState<Coupon | null>(() => {
+    try {
+      const saved = localStorage.getItem('op4u_cart_coupon');
+      return saved ? JSON.parse(saved) as Coupon : null;
+    } catch {
+      return null;
+    }
+  });
+  const [couponCode, setCouponCode] = useState(() => {
+    try {
+      return localStorage.getItem('op4u_cart_coupon_code') || '';
+    } catch {
+      return '';
+    }
+  });
   const [couponError, setCouponError] = useState<string | null>(null);
   const [rates, setRates] = useState<PricingRate[]>([]);
   const [shippingRates, setShippingRates] = useState<ShippingRate[]>([]);
-  const [selectedCourier, setSelectedCourier] = useState<CourierType>('local');
-  const [pincode, setPincode] = useState('');
+  const [selectedCourier, setSelectedCourier] = useState<CourierType>(() => {
+    try {
+      return (localStorage.getItem('op4u_cart_courier') as CourierType) || 'local';
+    } catch {
+      return 'local';
+    }
+  });
+  const [pincode, setPincode] = useState(() => {
+    try {
+      return localStorage.getItem('op4u_cart_pincode') || '';
+    } catch {
+      return '';
+    }
+  });
 
   useEffect(() => {
     getActivePricingRates().then((data) => {
@@ -66,6 +98,22 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       if (data) setShippingRates(data);
     });
   }, []);
+
+  useEffect(() => {
+    try { localStorage.setItem('op4u_cart_items', JSON.stringify(items)); } catch { /* ignore */ }
+  }, [items]);
+  useEffect(() => {
+    try { localStorage.setItem('op4u_cart_coupon', JSON.stringify(coupon)); } catch { /* ignore */ }
+  }, [coupon]);
+  useEffect(() => {
+    try { localStorage.setItem('op4u_cart_coupon_code', couponCode); } catch { /* ignore */ }
+  }, [couponCode]);
+  useEffect(() => {
+    try { localStorage.setItem('op4u_cart_courier', selectedCourier); } catch { /* ignore */ }
+  }, [selectedCourier]);
+  useEffect(() => {
+    try { localStorage.setItem('op4u_cart_pincode', pincode); } catch { /* ignore */ }
+  }, [pincode]);
 
   const addItem = useCallback((item: OrderItem, file?: File) => {
     setItems((prev) => [...prev, item]);
@@ -115,6 +163,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setCoupon(null);
     setCouponCode('');
     setPincode('');
+    try {
+      localStorage.removeItem('op4u_cart_items');
+      localStorage.removeItem('op4u_cart_coupon');
+      localStorage.removeItem('op4u_cart_coupon_code');
+      localStorage.removeItem('op4u_cart_pincode');
+    } catch { /* ignore */ }
   }, []);
 
   const totalWeightGrams = calculateCartWeight(items);
@@ -134,7 +188,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     totalWeight
   );
 
-  const estimatedDays = 0;
+  const estimatedDays = selectedMethod?.available ? parseInt(selectedMethod.estimatedDays.replace(/\D/g, '').split(/\D/)[0] || '0', 10) : 0;
 
   return (
     <CartContext.Provider
