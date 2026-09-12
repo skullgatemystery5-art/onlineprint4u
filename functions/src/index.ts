@@ -184,13 +184,16 @@ async function sendWhatsApp(to: string, message: string): Promise<string> {
       return;
     }
     try {
-      const { email, otp } = req.body;
+        const bodyData = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
+      const { email, otp } = bodyData || {};
+      
+      console.log("PARSED REQ BODY:", { email, otp });
 
       if (!email || !otp) {
         res.status(400).json({ success: false, error: "Email and OTP are required" });
         return;
       }
-
+      
       const subject = "Your Verification OTP Code";
       const body = `Your OTP code is: ${otp}. It is valid for a short time.`;
 
