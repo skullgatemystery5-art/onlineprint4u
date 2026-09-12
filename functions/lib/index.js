@@ -75,7 +75,7 @@ function buildEmailBody(order, timestamp) {
         (order.notes ? `Notes: ${order.notes}\n\n` : "") +
         `Please process this order promptly.`);
 }
-function buildWhatsAppMessage(order, timestamp) {
+function buildOwnerWhatsAppMessage(order, timestamp) {
     const itemLines = buildItemLines(order.items);
     return (`*NEW ORDER — ONLINE PRINT 4U*\n\n` +
         `Order: ${order.order_number}\n` +
@@ -90,6 +90,22 @@ function buildWhatsAppMessage(order, timestamp) {
         `Shipping: Rs. ${order.shipping_cost?.toFixed(2)}\n` +
         `*Total: Rs. ${order.total?.toFixed(2)}*\n\n` +
         `Process this order promptly.`);
+}
+function buildCustomerEmailBody(order, timestamp) {
+    const itemLines = buildItemLines(order.items);
+    return (`Dear ${order.shipping_name},\n\n` +
+        `Thank you for your order with Online Print 4U! Your order has been confirmed and is now being processed.\n\n` +
+        `Order Number: ${order.order_number}\n` +
+        `Date & Time: ${timestamp}\n` +
+        `Delivery Address: ${order.shipping_address} — ${order.shipping_pincode}\n\n` +
+        `ORDER DETAILS:\n${itemLines}\n\n` +
+        `Subtotal: Rs. ${order.subtotal?.toFixed(2)}\n` +
+        (order.discount > 0 ? `Discount${order.coupon_code ? ` (${order.coupon_code})` : ""}: -Rs. ${order.discount?.toFixed(2)}\n` : "") +
+        `Shipping: Rs. ${order.shipping_cost?.toFixed(2)}\n` +
+        `TOTAL PAID: Rs. ${order.total?.toFixed(2)}\n` +
+        `Payment: ${getPaymentLabel(order.payment_method)} (${order.payment_status})\n\n` +
+        `We will notify you when your order is shipped. For any queries, contact us at contact@onlineprint4u.in or +91 7858093865.\n\n` +
+        `Thank you for choosing Online Print 4U!`);
 }
 /**
  * Sends an email via Zoho SMTP.
@@ -152,6 +168,7 @@ async function sendWhatsApp(to, message) {
         return `error:${String(e)}`;
     }
 }
+const OWNER_WHATSAPP = process.env.OWNER_WHATSAPP || "917858093865";
 exports.orderTrigger = functions
     .region('asia-south1')
     .firestore.document("orders/{orderId}")
@@ -159,19 +176,31 @@ exports.orderTrigger = functions
     const orderData = snap.data();
     console.log("NEW ORDER CREATED:", orderData);
     const timestamp = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
-    const emailBody = buildEmailBody(orderData, timestamp);
-    const waMessage = buildWhatsAppMessage(orderData, timestamp);
+    const ownerEmailBody = buildEmailBody(orderData, timestamp);
+    const ownerWaMessage = buildOwnerWhatsAppMessage(orderData, timestamp);
+    // 1. Send email to owner (store inbox)
     try {
-        await sendEmail("contact@onlineprint4u.in", `New Order ${orderData.order_number}`, emailBody);
+        await sendEmail("contact@onlineprint4u.in", `New Order ${orderData.order_number}`, ownerEmailBody);
     }
     catch (e) {
-        console.error("ORDER EMAIL FAILED:", e);
+        console.error("OWNER EMAIL FAILED:", e);
     }
+    // 2. Send WhatsApp alert to owner number
     try {
-        await sendWhatsApp("91" + orderData.shipping_phone, waMessage);
+        await sendWhatsApp(OWNER_WHATSAPP, ownerWaMessage);
     }
     catch (e) {
-        console.error("WHATSAPP FAILED:", e);
+        console.error("OWNER WHATSAPP FAILED:", e);
+    }
+    // 3. Send confirmation email to customer (if email provided)
+    if (orderData.customer_email) {
+        try {
+            const customerBody = buildCustomerEmailBody(orderData, timestamp);
+            await sendEmail(orderData.customer_email, `Order Confirmation — ${orderData.order_number}`, customerBody);
+        }
+        catch (e) {
+            console.error("CUSTOMER EMAIL FAILED:", e);
+        }
     }
 });
 exports.sendOtp = functions
@@ -186,14 +215,23 @@ exports.sendOtp = functions
     }
     try {
         const bodyData = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
-        const { email, otp } = bodyData || {};
-        console.log("PARSED REQ BODY:", { email, otp });
-        if (!email || !otp) {
-            res.status(400).json({ success: false, error: "Email and OTP are required" });
+        const { email } = bodyData || {};
+        console.log("PARSED REQ BODY:", { email });
+        if (!email) {
+            res.status(400).json({ success: false, error: "Email is required" });
             return;
         }
+        // 1. 6 अंकों का नया OTP जनरेट करें
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const storeKey = `otp:${email}`;
+        // 2. डेटाबेस के 'otp_store' में सेव करें
+        await admin.firestore().collection('otp_store').doc(storeKey).set({
+            otp: otp,
+            created_at: admin.firestore.FieldValue.serverTimestamp()
+        });
         const subject = "Your Verification OTP Code";
         const body = `Your OTP code is: ${otp}. It is valid for a short time.`;
+        // 3. जोहो से ईमेल भेजें
         await sendEmail(email, subject, body);
         res.status(200).json({ success: true, message: "OTP sent successfully via Zoho" });
     }

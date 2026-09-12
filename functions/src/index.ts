@@ -245,18 +245,28 @@ export const sendOtp = functions
 
     try {
       const bodyData = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
-      const { email, otp } = bodyData || {};
+      const { email } = bodyData || {};
+      console.log("PARSED REQ BODY:", { email });
 
-      console.log("PARSED REQ BODY:", { email, otp });
-
-      if (!email || !otp) {
-        res.status(400).json({ success: false, error: "Email and OTP are required" });
+      if (!email) {
+        res.status(400).json({ success: false, error: "Email is required" });
         return;
       }
 
+      // 1. 6 अंकों का नया OTP जनरेट करें
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      const storeKey = `otp:${email}`;
+
+      // 2. डेटाबेस के 'otp_store' में सेव करें
+      await admin.firestore().collection('otp_store').doc(storeKey).set({
+        otp: otp,
+        created_at: admin.firestore.FieldValue.serverTimestamp()
+      });
+
       const subject = "Your Verification OTP Code";
       const body = `Your OTP code is: ${otp}. It is valid for a short time.`;
-
+      
+      // 3. जोहो से ईमेल भेजें
       await sendEmail(email, subject, body);
 
       res.status(200).json({ success: true, message: "OTP sent successfully via Zoho" });
