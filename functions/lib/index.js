@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sendOtp = exports.orderTrigger = void 0;
+exports.verifyOtp = exports.sendOtp = exports.orderTrigger = void 0;
 const functions = __importStar(require("firebase-functions"));
 const admin = __importStar(require("firebase-admin"));
 admin.initializeApp();
@@ -91,38 +91,39 @@ function buildWhatsAppMessage(order, timestamp) {
         `*Total: Rs. ${order.total?.toFixed(2)}*\n\n` +
         `Process this order promptly.`);
 }
+/**
+ * Sends an email via Zoho SMTP.
+ * Credentials are read from ZOHO_USER / ZOHO_PASS environment variables
+ * (set via `firebase functions:config:set` or Firebase CLI env vars).
+ *
+ * On failure this function THROWS — the caller is responsible for
+ * surfacing the error. Errors are never silently suppressed.
+ */
 async function sendEmail(to, subject, body) {
-    const smtpUser = "contact@onlineprint4u.in";
-    const smtpPass = "aYrMY3Y8XQ6M";
+    const smtpUser = process.env.ZOHO_USER || (functions.config().zoho && functions.config().zoho.user) || "";
+    const smtpPass = process.env.ZOHO_PASS || (functions.config().zoho && functions.config().zoho.pass) || "";
     if (!smtpUser || !smtpPass) {
-        console.log("[MAIL] SMTP_USER/SMTP_PASS not set. Email body:\n" + body);
-        return "skipped";
+        console.error("[MAIL] ZOHO_USER / ZOHO_PASS not set — cannot send email.");
+        throw new Error("Zoho SMTP credentials are not configured. Set ZOHO_USER and ZOHO_PASS environment variables.");
     }
-    try {
-        const smtpHost = "smtp.zoho.in";
-        const smtpPort = 465;
-        const smtpFrom = "contact@onlineprint4u.in";
-        const nodemailer = await Promise.resolve().then(() => __importStar(require("nodemailer")));
-        const transporter = nodemailer.createTransport({
-            host: smtpHost,
-            port: smtpPort,
-            secure: smtpPort === 465,
-            auth: { user: smtpUser, pass: smtpPass },
-            logger: true,
-            debug: true,
-        });
-        await transporter.sendMail({
-            from: smtpFrom,
-            to,
-            subject,
-            text: body,
-        });
-        return "sent";
-    }
-    catch (e) {
-        console.error("ZOHO SMTP ERROR FAILED:", e);
-        return "error: " + String(e);
-    }
+    const smtpHost = process.env.ZOHO_HOST || "smtp.zoho.in";
+    const smtpPort = parseInt(process.env.ZOHO_PORT || "465", 10);
+    const smtpFrom = process.env.ZOHO_FROM || smtpUser;
+    const nodemailer = await Promise.resolve().then(() => __importStar(require("nodemailer")));
+    const transporter = nodemailer.createTransport({
+        host: smtpHost,
+        port: smtpPort,
+        secure: smtpPort === 465,
+        requireTLS: smtpPort !== 465,
+        auth: { user: smtpUser, pass: smtpPass },
+    });
+    await transporter.sendMail({
+        from: smtpFrom,
+        to,
+        subject,
+        text: body,
+    });
+    return "sent";
 }
 async function sendWhatsApp(to, message) {
     const token = process.env.WHATSAPP_TOKEN;
@@ -155,7 +156,23 @@ exports.orderTrigger = functions
     .region('asia-south1')
     .firestore.document("orders/{orderId}")
     .onCreate(async (snap) => {
-    // आपका कोड वही रहेगा
+    const orderData = snap.data();
+    console.log("NEW ORDER CREATED:", orderData);
+    const timestamp = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
+    const emailBody = buildEmailBody(orderData, timestamp);
+    const waMessage = buildWhatsAppMessage(orderData, timestamp);
+    try {
+        await sendEmail("contact@onlineprint4u.in", `New Order ${orderData.order_number}`, emailBody);
+    }
+    catch (e) {
+        console.error("ORDER EMAIL FAILED:", e);
+    }
+    try {
+        await sendWhatsApp("91" + orderData.shipping_phone, waMessage);
+    }
+    catch (e) {
+        console.error("WHATSAPP FAILED:", e);
+    }
 });
 exports.sendOtp = functions
     .region('asia-south1')
@@ -168,11 +185,72 @@ exports.sendOtp = functions
         return;
     }
     try {
-        // आपका ओटीपी भेजने का लॉजिक (या जो कोड आप एक्सेक्यूट करना चाहते हैं) यहाँ आएगा
-        res.status(200).json({ success: true, message: "OTP sent successfully" });
+        const bodyData = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
+        const { email, otp } = bodyData || {};
+        console.log("PARSED REQ BODY:", { email, otp });
+        if (!email || !otp) {
+            res.status(400).json({ success: false, error: "Email and OTP are required" });
+            return;
+        }
+        const subject = "Your Verification OTP Code";
+        const body = `Your OTP code is: ${otp}. It is valid for a short time.`;
+        await sendEmail(email, subject, body);
+        res.status(200).json({ success: true, message: "OTP sent successfully via Zoho" });
     }
     catch (error) {
-        res.status(500).json({ error: String(error) });
+        const message = error instanceof Error ? error.message : String(error);
+        console.error("ZOHO SEND OTP ERROR:", message);
+        res.status(500).json({
+            success: false,
+            error: message,
+            code: "ZOHO_SEND_FAILED",
+        });
+    }
+});
+exports.verifyOtp = functions
+    .region('asia-south1')
+    .https.onRequest(async (req, res) => {
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    if (req.method === 'OPTIONS') {
+        res.status(204).send('');
+        return;
+    }
+    try {
+        const bodyData = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
+        const { email, otp } = bodyData || {};
+        if (!email || !otp) {
+            res.status(400).json({ success: false, error: "Email and OTP are required" });
+            return;
+        }
+        const storeKey = `otp:${email}`;
+        const adminDb = admin.firestore();
+        const storeRef = adminDb.collection('otp_store').doc(storeKey);
+        const storeSnap = await storeRef.get();
+        if (!storeSnap.exists) {
+            res.status(400).json({ success: false, error: "No OTP request found. Please request a new code." });
+            return;
+        }
+        const stored = storeSnap.data();
+        const createdAt = stored.created_at;
+        if (createdAt && Date.now() / 1000 - createdAt.seconds > 300) {
+            await storeRef.delete();
+            res.status(400).json({ success: false, error: "OTP has expired. Please request a new code." });
+            return;
+        }
+        if (stored.otp !== otp) {
+            res.status(400).json({ success: false, error: "Invalid OTP. Please check and try again." });
+            return;
+        }
+        await storeRef.delete();
+        const customToken = await admin.auth().createCustomToken(email);
+        res.status(200).json({ success: true, customToken });
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error("VERIFY OTP ERROR:", message);
+        res.status(500).json({ success: false, error: message });
     }
 });
 //# sourceMappingURL=index.js.map
