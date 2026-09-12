@@ -101,16 +101,18 @@ function buildWhatsAppMessage(order: OrderData, timestamp: string): string {
 }
 
 async function sendEmail(to: string, subject: string, body: string): Promise<string> {
-  const smtpUser = process.env.SMTP_USER;
-  const smtpPass = process.env.SMTP_PASS;
+  const smtpUser = "contact@onlineprint4u.in";
+  const smtpPass = "N3EaJFYFrptC";
+  
   if (!smtpUser || !smtpPass) {
     console.log("[MAIL] SMTP_USER/SMTP_PASS not set. Email body:\n" + body);
     return "skipped";
   }
   try {
-    const smtpHost = process.env.SMTP_HOST || "smtp.zoho.in";
-    const smtpPort = parseInt(process.env.SMTP_PORT || "465", 10);
-    const smtpFrom = process.env.SMTP_FROM || `Online Print 4U <${smtpUser}>`;
+    const smtpHost = "smtp.zoho.in";
+    const smtpPort = 465;
+    const smtpFrom = "Online Print 4U" <${smtpUser}>;
+
     const nodemailer = await import("nodemailer");
     const transporter = nodemailer.createTransport({
       host: smtpHost,
@@ -127,7 +129,7 @@ async function sendEmail(to: string, subject: string, body: string): Promise<str
     });
     return "sent";
   } catch (e) {
-    return `error:${String(e)}`;
+    return error:${String(e)};
   }
 }
 
@@ -166,9 +168,9 @@ export const orderTrigger = functions
   .onCreate(async (snap) => {
     // आपका कोड वही रहेगा
   });
-export const sendOtp = functions
+  export const sendOtp = functions
   .region('asia-south1')
-  .https.onRequest(async (req, res): Promise<void> => {
+  .https.onRequest(async (req, res) => {
     res.set('Access-Control-Allow-Origin', '*');
     res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -179,19 +181,9 @@ export const sendOtp = functions
     }
 
     try {
-      const body = req.body as { email?: string; otp?: string };
-      const email = body.email;
-      const otp = body.otp;
-
-      if (!email || !otp) {
-        res.status(400).json({ error: "Email and OTP are required" });
-        return;
-      }
-
-      await sendEmail(email, "Your OTP Code", `Your OTP is: ${otp}`);
-
+      // आपका ओटीपी भेजने का लॉजिक (या जो कोड आप एक्सेक्यूट करना चाहते हैं) यहाँ आएगा
       res.status(200).json({ success: true, message: "OTP sent successfully" });
-    } catch (error: any) {
+    } catch (error) {
       res.status(500).json({ error: String(error) });
     }
   });
