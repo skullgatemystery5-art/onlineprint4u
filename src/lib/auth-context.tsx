@@ -158,7 +158,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await new Promise((r) => setTimeout(r, 50));
 
         const verifier = new RecaptchaVerifier(firebaseAuth, recaptchaContainerId, {
-          size: 'normal',
+          size: 'invisible',
           'expired-callback': () => {
             clearRecaptcha();
           },
