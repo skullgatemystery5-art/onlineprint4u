@@ -163,11 +163,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await new Promise((r) => setTimeout(r, 100));
 
         const verifier = new RecaptchaVerifier(firebaseAuth, container.id, {
-          size: 'invisible',
-          'expired-callback': () => {
-            clearRecaptcha();
-          }
-        });
+         size: 'invisible',
+         'sitekey': '6Lfg5rctAAAAAB4OaWpFPu8-LAMbEqnUT20fojwt',
+         'expired-callback': () => {
+           clearRecaptcha();
+      }
+     });
         recaptchaVerifierRef.current = verifier;
 
         await verifier.render();
