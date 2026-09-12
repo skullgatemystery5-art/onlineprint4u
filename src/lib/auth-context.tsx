@@ -69,7 +69,7 @@ function toAuthUser(fbUser: FirebaseUser): AuthUser {
 }
 
 function getCloudFunctionUrl(endpoint: string): string {
-  const region = import.meta.env.VITE_FIREBASE_FUNCTIONS_REGION || 'us-central1';
+  const region = import.meta.env.VITE_FIREBASE_FUNCTIONS_REGION || 'asia-south1';
   const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
   if (projectId) {
     return `https://${region}-${projectId}.cloudfunctions.net/${endpoint}`;
