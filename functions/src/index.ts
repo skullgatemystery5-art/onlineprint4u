@@ -111,8 +111,7 @@ async function sendEmail(to: string, subject: string, body: string): Promise<str
   try {
     const smtpHost = "smtp.zoho.in";
     const smtpPort = 465;
-    const smtpFrom = "Online Print 4U" <${smtpUser}>;
-
+    const smtpFrom = "contact@onlineprint4u.in";    
     const nodemailer = await import("nodemailer");
     const transporter = nodemailer.createTransport({
       host: smtpHost,
@@ -129,7 +128,7 @@ async function sendEmail(to: string, subject: string, body: string): Promise<str
     });
     return "sent";
   } catch (e) {
-    return error:${String(e)};
+    return "error: " + String(e);
   }
 }
 
