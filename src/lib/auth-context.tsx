@@ -161,7 +161,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           size: 'invisible',
           'expired-callback': () => {
             clearRecaptcha();
-          },
+          }
         });
         recaptchaVerifierRef.current = verifier;
 
