@@ -128,6 +128,7 @@ async function sendEmail(to: string, subject: string, body: string): Promise<str
     });
     return "sent";
   } catch (e) {
+    console.error("ZOHO SMTP ERROR FAILED:", e);
     return "error: " + String(e);
   }
 }
