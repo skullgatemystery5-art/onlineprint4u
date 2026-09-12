@@ -162,7 +162,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Give the DOM a moment to settle before instantiating the verifier
         await new Promise((r) => setTimeout(r, 100));
 
-        const verifier = new RecaptchaVerifier(firebaseAuth, container.id, {
+        const verifier = new RecaptchaVerifier(firebaseAuth, document.getElementById(recaptchaContainerId) || recaptchaContainerId, {
          size: 'invisible',
          'sitekey': '6Lfg5rctAAAAAB4OaWpFPu8-LAMbEqnUT20fojwt',
          'expired-callback': () => {
