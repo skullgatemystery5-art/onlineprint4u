@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.onOrderCreated = void 0;
+exports.orderTrigger = void 0;
 const functions = __importStar(require("firebase-functions"));
 const admin = __importStar(require("firebase-admin"));
 admin.initializeApp();
@@ -148,28 +148,10 @@ async function sendWhatsApp(to, message) {
         return `error:${String(e)}`;
     }
 }
-exports.onOrderCreated = functions.firestore
-    .document("orders/{orderId}")
+exports.orderTrigger = functions
+    .region('asia-south1')
+    .firestore.document("orders/{orderId}")
     .onCreate(async (snap) => {
-    const order = snap.data();
-    if (!order || !order.order_number) {
-        console.log("Skipping: invalid order data");
-        return;
-    }
-    const ownerEmail = process.env.OWNER_EMAIL || "contact@onlineprint4u.in";
-    const ownerWhatsApp = process.env.OWNER_WHATSAPP || "917858093865";
-    const timestamp = new Date().toLocaleString("en-IN", {
-        timeZone: "Asia/Kolkata",
-        dateStyle: "medium",
-        timeStyle: "short",
-    });
-    const emailSubject = `New Order ${order.order_number} — Online Print 4U`;
-    const emailBody = buildEmailBody(order, timestamp);
-    const whatsappMessage = buildWhatsAppMessage(order, timestamp);
-    const [emailResult, whatsappResult] = await Promise.all([
-        sendEmail(ownerEmail, emailSubject, emailBody),
-        sendWhatsApp(ownerWhatsApp, whatsappMessage),
-    ]);
-    console.log(`Order ${order.order_number}: email=${emailResult}, whatsapp=${whatsappResult}`);
+    // आपका कोड वही रहेगा
 });
 //# sourceMappingURL=index.js.map

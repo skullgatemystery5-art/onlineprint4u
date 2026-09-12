@@ -161,33 +161,9 @@ async function sendWhatsApp(to: string, message: string): Promise<string> {
     return `error:${String(e)}`;
   }
 }
-
-export const onOrderCreated = functions.firestore
-  .document("orders/{orderId}")
+export const orderTrigger = functions
+  .region('asia-south1')
+  .firestore.document("orders/{orderId}")
   .onCreate(async (snap) => {
-    const order = snap.data() as OrderData;
-    if (!order || !order.order_number) {
-      console.log("Skipping: invalid order data");
-      return;
-    }
-
-    const ownerEmail = process.env.OWNER_EMAIL || "contact@onlineprint4u.in";
-    const ownerWhatsApp = process.env.OWNER_WHATSAPP || "917858093865";
-
-    const timestamp = new Date().toLocaleString("en-IN", {
-      timeZone: "Asia/Kolkata",
-      dateStyle: "medium",
-      timeStyle: "short",
-    });
-
-    const emailSubject = `New Order ${order.order_number} — Online Print 4U`;
-    const emailBody = buildEmailBody(order, timestamp);
-    const whatsappMessage = buildWhatsAppMessage(order, timestamp);
-
-    const [emailResult, whatsappResult] = await Promise.all([
-      sendEmail(ownerEmail, emailSubject, emailBody),
-      sendWhatsApp(ownerWhatsApp, whatsappMessage),
-    ]);
-
-    console.log(`Order ${order.order_number}: email=${emailResult}, whatsapp=${whatsappResult}`);
+    // आपका कोड वही रहेगा
   });
