@@ -181,11 +181,27 @@ export const orderTrigger = functions
       res.status(204).send('');
       return;
     }
-
     try {
-      // आपका ओटीपी भेजने का लॉजिक (या जो कोड आप एक्सेक्यूट करना चाहते हैं) यहाँ आएगा
-      res.status(200).json({ success: true, message: "OTP sent successfully" });
+      const { email, otp } = req.body;
+
+      if (!email || !otp) {
+        res.status(400).json({ success: false, error: "Email and OTP are required" });
+        return;
+      }
+
+      const subject = "Your Verification OTP Code";
+      const body = `Your OTP code is: ${otp}. It is valid for a short time.`;
+
+      const emailResult = await sendEmail(email, subject, body);
+
+      if (emailResult === "sent") {
+        res.status(200).json({ success: true, message: "OTP sent successfully via Zoho" });
+      } else {
+        res.status(500).json({ success: false, error: emailResult });
+      }
+
     } catch (error) {
-      res.status(500).json({ error: String(error) });
+      console.error("ZOHO SEND OTP ERROR:", error);
+      res.status(500).json({ success: false, error: String(error) });
     }
   });
