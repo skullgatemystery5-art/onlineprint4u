@@ -109,6 +109,7 @@ async function sendEmail(to: string, subject: string, body: string): Promise<str
     return "skipped";
   }
   try {
+    
     const smtpHost = "smtp.zoho.in";
     const smtpPort = 465;
     const smtpFrom = "contact@onlineprint4u.in";    
@@ -164,12 +165,13 @@ async function sendWhatsApp(to: string, message: string): Promise<string> {
     return `error:${String(e)}`;
   }
 }
-export const orderTrigger = functions
+  export const orderTrigger = functions
   .region('asia-south1')
   .firestore.document("orders/{orderId}")
   .onCreate(async (snap) => {
-    // आपका कोड वही रहेगा
-  });
+    const orderData = snap.data();
+    console.log("NEW ORDER CREATED:", orderData);
+});
   export const sendOtp = functions
   .region('asia-south1')
   .https.onRequest(async (req, res) => {
