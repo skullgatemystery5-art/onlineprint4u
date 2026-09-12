@@ -141,6 +141,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const sendPhoneOtp = useCallback(
     async (phone: string, recaptchaContainerId: string): Promise<SendOtpResult> => {
+      if (typeof document !== 'undefined' && !document.getElementById('firebase-recaptcha-global')) {
+  const div = document.createElement('div');
+  div.id = 'firebase-recaptcha-global';
+  div.style.display = 'none';
+  document.body.appendChild(div);
+}
       if (!isFirebaseConfigured || !firebaseAuth) {
         return { error: 'Phone OTP is not configured. Please contact support.' };
       }
