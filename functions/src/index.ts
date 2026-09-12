@@ -188,6 +188,7 @@ async function sendWhatsApp(to: string, message: string): Promise<string> {
       const { email, otp } = bodyData || {};
       
       console.log("PARSED REQ BODY:", { email, otp });
+      
 
       if (!email || !otp) {
         res.status(400).json({ success: false, error: "Email and OTP are required" });
@@ -203,6 +204,12 @@ async function sendWhatsApp(to: string, message: string): Promise<string> {
         res.status(200).json({ success: true, message: "OTP sent successfully via Zoho" });
       } else {
         res.status(500).json({ success: false, error: emailResult });
+        console.error("ZOHO EMAIL ERROR:", emailResult);
+    res.status(500).json({ 
+        success: false, 
+        error: emailResult,
+        code: "ZOHO_SEND_FAILED"
+    });
       }
 
     } catch (error) {
