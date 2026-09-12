@@ -156,19 +156,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setOtpSending(true);
       try {
         clearRecaptcha();
-        const containerElement = document.getElementById(recaptchaContainerId) || document.getElementById('firebase-recaptcha-global');
-  
-      if (!containerElement) {
+      const containerElement = document.getElementById(recaptchaContainerId) || document.getElementById('firebase-recaptcha-global');
+    
+    if (!containerElement) {
       return { error: 'Recaptcha container element not found in DOM.' };
-      }
-        // Try the modal's container first, fall back to the persistent global container
-        
-        container.innerHTML = '';
+    }
 
+    containerElement.innerHTML = '';  
         // Give the DOM a moment to settle before instantiating the verifier
         await new Promise((r) => setTimeout(r, 100));
 
-        const verifier = new RecaptchaVerifier(firebaseAuth, document.getElementById(recaptchaContainerId) || recaptchaContainerId, {
+        const verifier = new RecaptchaVerifier(firebaseAuth, containerElement, {
          size: 'invisible',
          'sitekey': '6Lfg5rctAAAAAB4OaWpFPu8-LAMbEqnUT20fojwt',
          'expired-callback': () => {
