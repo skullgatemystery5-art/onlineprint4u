@@ -111,7 +111,6 @@ async function sendEmail(to: string, subject: string, body: string): Promise<str
     const smtpHost = process.env.SMTP_HOST || "smtp.zoho.in";
     const smtpPort = parseInt(process.env.SMTP_PORT || "465", 10);
     const smtpFrom = process.env.SMTP_FROM || `Online Print 4U <${smtpUser}>`;
-
     const nodemailer = await import("nodemailer");
     const transporter = nodemailer.createTransport({
       host: smtpHost,
