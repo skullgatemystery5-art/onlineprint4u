@@ -461,6 +461,7 @@ const sendEmailOtp = useCallback(
       }}
     >
       {children}
+      <div id="firebase-recaptcha-global" style={{ display: 'none' }}></div>
     </AuthContext.Provider>
   );
 }
