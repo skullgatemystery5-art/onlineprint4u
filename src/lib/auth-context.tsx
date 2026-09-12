@@ -262,20 +262,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [confirmationResult, fetchProfile, clearRecaptcha]
   );
 
-  const sendEmailOtp = useCallback(
+const sendEmailOtp = useCallback(
     async (email: string): Promise<SendOtpResult> => {
       if (!isFirebaseConfigured) {
         return { error: 'Email login is not configured. Please contact support.' };
       }
       setOtpSending(true);
       try {
+        const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
         const apiUrl = getCloudFunctionUrl('sendOtp');
         const res = await fetch(apiUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ email }),
+          body: JSON.stringify({ email, otp: generatedOtp }),
         });
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
