@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.orderTrigger = void 0;
+exports.sendOtp = exports.orderTrigger = void 0;
 const functions = __importStar(require("firebase-functions"));
 const admin = __importStar(require("firebase-admin"));
 admin.initializeApp();
@@ -153,5 +153,23 @@ exports.orderTrigger = functions
     .firestore.document("orders/{orderId}")
     .onCreate(async (snap) => {
     // आपका कोड वही रहेगा
+});
+exports.sendOtp = functions
+    .region('asia-south1')
+    .https.onRequest(async (req, res) => {
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    if (req.method === 'OPTIONS') {
+        res.status(204).send('');
+        return;
+    }
+    try {
+        // आपका ओटीपी भेजने का लॉजिक (या जो कोड आप एक्सेक्यूट करना चाहते हैं) यहाँ आएगा
+        res.status(200).json({ success: true, message: "OTP sent successfully" });
+    }
+    catch (error) {
+        res.status(500).json({ error: String(error) });
+    }
 });
 //# sourceMappingURL=index.js.map

@@ -167,3 +167,22 @@ export const orderTrigger = functions
   .onCreate(async (snap) => {
     // आपका कोड वही रहेगा
   });
+  export const sendOtp = functions
+  .region('asia-south1')
+  .https.onRequest(async (req, res) => {
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+    if (req.method === 'OPTIONS') {
+      res.status(204).send('');
+      return;
+    }
+
+    try {
+      // आपका ओटीपी भेजने का लॉजिक (या जो कोड आप एक्सेक्यूट करना चाहते हैं) यहाँ आएगा
+      res.status(200).json({ success: true, message: "OTP sent successfully" });
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
