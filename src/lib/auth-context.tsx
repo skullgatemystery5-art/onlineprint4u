@@ -141,12 +141,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const sendPhoneOtp = useCallback(
     async (phone: string, recaptchaContainerId: string): Promise<SendOtpResult> => {
-      if (typeof document !== 'undefined' && !document.getElementById('firebase-recaptcha-global')) {
-  const div = document.createElement('div');
-  div.id = 'firebase-recaptcha-global';
-  div.style.display = 'none';
-  document.body.appendChild(div);
-}
+      // Try the modal's container first...
+      let container = document.getElementById(recaptchaContainerId);
+      if (!container) {
+      container = document.getElementById('firebase-recaptcha-global');
+      }
+      if (!container) {
+      return { error: 'Verification widget could not be loaded...' };
+      }
       if (!isFirebaseConfigured || !firebaseAuth) {
         return { error: 'Phone OTP is not configured. Please contact support.' };
       }
@@ -154,15 +156,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setOtpSending(true);
       try {
         clearRecaptcha();
-
+        const containerElement = document.getElementById(recaptchaContainerId) || document.getElementById('firebase-recaptcha-global');
+  
+      if (!containerElement) {
+      return { error: 'Recaptcha container element not found in DOM.' };
+      }
         // Try the modal's container first, fall back to the persistent global container
-        let container = document.getElementById(recaptchaContainerId);
-        if (!container) {
-          container = document.getElementById('firebase-recaptcha-global');
-        }
-        if (!container) {
-          return { error: 'Verification widget could not be loaded. Please refresh the page.' };
-        }
+        
         container.innerHTML = '';
 
         // Give the DOM a moment to settle before instantiating the verifier
