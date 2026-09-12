@@ -165,7 +165,14 @@ exports.sendOtp = functions
         return;
     }
     try {
-        // आपका ओटीपी भेजने का लॉजिक (या जो कोड आप एक्सेक्यूट करना चाहते हैं) यहाँ आएगा
+        const body = req.body;
+        const email = body.email;
+        const otp = body.otp;
+        if (!email || !otp) {
+            res.status(400).json({ error: "Email and OTP are required" });
+            return;
+        }
+        await sendEmail(email, "Your OTP Code", `Your OTP is: ${otp}`);
         res.status(200).json({ success: true, message: "OTP sent successfully" });
     }
     catch (error) {

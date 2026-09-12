@@ -167,9 +167,9 @@ export const orderTrigger = functions
   .onCreate(async (snap) => {
     // आपका कोड वही रहेगा
   });
-  export const sendOtp = functions
+export const sendOtp = functions
   .region('asia-south1')
-  .https.onRequest(async (req, res) => {
+  .https.onRequest(async (req, res): Promise<void> => {
     res.set('Access-Control-Allow-Origin', '*');
     res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -180,9 +180,19 @@ export const orderTrigger = functions
     }
 
     try {
-      // आपका ओटीपी भेजने का लॉजिक (या जो कोड आप एक्सेक्यूट करना चाहते हैं) यहाँ आएगा
+      const body = req.body as { email?: string; otp?: string };
+      const email = body.email;
+      const otp = body.otp;
+
+      if (!email || !otp) {
+        res.status(400).json({ error: "Email and OTP are required" });
+        return;
+      }
+
+      await sendEmail(email, "Your OTP Code", `Your OTP is: ${otp}`);
+
       res.status(200).json({ success: true, message: "OTP sent successfully" });
-    } catch (error) {
+    } catch (error: any) {
       res.status(500).json({ error: String(error) });
     }
   });
