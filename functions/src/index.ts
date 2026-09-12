@@ -102,7 +102,7 @@ function buildWhatsAppMessage(order: OrderData, timestamp: string): string {
 
 async function sendEmail(to: string, subject: string, body: string): Promise<string> {
   const smtpUser = "contact@onlineprint4u.in";
-  const smtpPass = "N3EaJFYFrptC";
+  const smtpPass = "aYrMY3Y8XQ6M";
   
   if (!smtpUser || !smtpPass) {
     console.log("[MAIL] SMTP_USER/SMTP_PASS not set. Email body:\n" + body);
