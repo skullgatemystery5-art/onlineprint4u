@@ -149,15 +149,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         clearRecaptcha();
 
-        const container = document.getElementById(recaptchaContainerId);
+        // Try the modal's container first, fall back to the persistent global container
+        let container = document.getElementById(recaptchaContainerId);
+        if (!container) {
+          container = document.getElementById('firebase-recaptcha-global');
+        }
         if (!container) {
           return { error: 'Verification widget could not be loaded. Please refresh the page.' };
         }
         container.innerHTML = '';
 
-        await new Promise((r) => setTimeout(r, 50));
+        // Give the DOM a moment to settle before instantiating the verifier
+        await new Promise((r) => setTimeout(r, 100));
 
-        const verifier = new RecaptchaVerifier(firebaseAuth, recaptchaContainerId, {
+        const verifier = new RecaptchaVerifier(firebaseAuth, container.id, {
           size: 'invisible',
           'expired-callback': () => {
             clearRecaptcha();
@@ -204,6 +209,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         if (error.code === 'auth/quota-exceeded') {
           return { error: 'SMS quota exceeded. Please try again later or use email login.' };
+        }
+        if (error.code === 'auth/invalid-recaptcha-token' || error.code === 'auth/invalid-verification-code') {
+          return { error: 'Verification failed. Please refresh the page and try again.' };
         }
         const msg = error.message ?? 'Failed to send OTP';
         return { error: msg };

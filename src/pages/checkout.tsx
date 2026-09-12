@@ -45,11 +45,8 @@ import { cn } from '@/lib/utils';
 import { formatWeight, type CourierType } from '@/lib/shipping';
 import { ShippingPolicyModal } from '@/components/shipping-policy-modal';
 import { initiateRazorpayPayment, isRazorpayConfigured } from '@/lib/razorpay';
-import { initiateCashfreePayment, isCashfreeConfigured } from '@/lib/cashfree';
-import { initiatePhonePePayment, isPhonePeConfigured } from '@/lib/phonepe';
 
 type PaymentMethod = 'advance' | 'full_upi';
-type PaymentGateway = 'razorpay' | 'cashfree' | 'phonepe';
 
 type CheckoutSection = 'auth' | 'address' | 'delivery' | 'payment' | 'review';
 
@@ -101,7 +98,6 @@ export default function CheckoutPage() {
 
   // --- Payment state ---
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('advance');
-  const [paymentGateway, setPaymentGateway] = useState<PaymentGateway>('razorpay');
   const [paymentDone, setPaymentDone] = useState(false);
   const [paymentProcessing, setPaymentProcessing] = useState(false);
   const [razorpayPaymentId, setRazorpayPaymentId] = useState<string | null>(null);
@@ -234,73 +230,27 @@ export default function CheckoutPage() {
 
     setPaymentProcessing(true);
 
-    if (paymentGateway === 'razorpay') {
-      if (!isRazorpayConfigured()) {
-        setPaymentProcessing(false);
-        toast.error('Razorpay is not configured. Please contact support.');
-        return;
-      }
-      const result = await initiateRazorpayPayment({
-        amount: amountToPayNow,
-        name: 'Online Print 4U',
-        description: paymentMethod === 'advance'
-          ? `50% Advance Payment — Order Total: ${formatINR(totals.total)}`
-          : `Full Payment — Order Total: ${formatINR(totals.total)}`,
-        prefill: { name: customerName, email: customerEmail, contact: customerPhone },
-        notes: { payment_type: paymentMethod, total_order_value: totals.total.toFixed(2) },
-      });
+    if (!isRazorpayConfigured()) {
       setPaymentProcessing(false);
-      if (result.success && result.paymentId) {
-        setRazorpayPaymentId(result.paymentId);
-        setPaymentDone(true);
-        toast.success('Payment successful!');
-      } else {
-        toast.error(result.error || 'Payment failed. Please try again.');
-      }
-    } else if (paymentGateway === 'cashfree') {
-      if (!isCashfreeConfigured()) {
-        setPaymentProcessing(false);
-        toast.error('Cashfree is not configured. Please contact support.');
-        return;
-      }
-      const orderId = `CF-${Date.now().toString(36).toUpperCase()}`;
-      const result = await initiateCashfreePayment({
-        amount: amountToPayNow,
-        orderId,
-        customerName,
-        customerEmail,
-        customerPhone,
-        returnUrl: window.location.href,
-      });
-      setPaymentProcessing(false);
-      if (result.success && result.paymentId) {
-        setRazorpayPaymentId(result.paymentId);
-        setPaymentDone(true);
-        toast.success('Payment successful!');
-      } else {
-        toast.error(result.error || 'Payment failed. Please try again.');
-      }
-    } else if (paymentGateway === 'phonepe') {
-      if (!isPhonePeConfigured()) {
-        setPaymentProcessing(false);
-        toast.error('PhonePe is not configured. Please contact support.');
-        return;
-      }
-      const orderId = `PP-${Date.now().toString(36).toUpperCase()}`;
-      const result = await initiatePhonePePayment({
-        amount: amountToPayNow,
-        orderId,
-        customerName,
-        customerPhone,
-        returnUrl: window.location.href,
-      });
-      setPaymentProcessing(false);
-      if (result.success) {
-        setRazorpayPaymentId(result.orderId || orderId);
-        setPaymentDone(true);
-      } else {
-        toast.error(result.error || 'Payment failed. Please try again.');
-      }
+      toast.error('Razorpay is not configured. Please contact support.');
+      return;
+    }
+    const result = await initiateRazorpayPayment({
+      amount: amountToPayNow,
+      name: 'Online Print 4U',
+      description: paymentMethod === 'advance'
+        ? `50% Advance Payment — Order Total: ${formatINR(totals.total)}`
+        : `Full Payment — Order Total: ${formatINR(totals.total)}`,
+      prefill: { name: customerName, email: customerEmail, contact: customerPhone },
+      notes: { payment_type: paymentMethod, total_order_value: totals.total.toFixed(2) },
+    });
+    setPaymentProcessing(false);
+    if (result.success && result.paymentId) {
+      setRazorpayPaymentId(result.paymentId);
+      setPaymentDone(true);
+      toast.success('Payment successful!');
+    } else {
+      toast.error(result.error || 'Payment failed. Please try again.');
     }
   };
 
@@ -392,7 +342,7 @@ export default function CheckoutPage() {
         payment_screenshot_url: null,
         customer_email: shippingEmail || emailInput || null,
         tracking_id: null,
-        notes: `${paymentGateway === 'razorpay' ? 'Razorpay' : paymentGateway === 'cashfree' ? 'Cashfree' : 'PhonePe'} Payment ID: ${razorpayPaymentId}`,
+        notes: `Razorpay Payment ID: ${razorpayPaymentId}`,
       });
 
       if (!order) throw new Error('Failed to save order');
@@ -967,47 +917,10 @@ export default function CheckoutPage() {
                 </button>
               </div>
 
-              {/* Payment Gateway Selection */}
-              <div className="mt-4">
-                <p className="mb-2 text-xs font-medium text-muted-foreground">Select Payment Gateway</p>
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    onClick={() => { setPaymentGateway('razorpay'); setPaymentDone(false); setRazorpayPaymentId(null); }}
-                    className={cn(
-                      'rounded-xl border-2 px-3 py-3 text-center transition-all',
-                      paymentGateway === 'razorpay'
-                        ? 'border-primary bg-primary/5'
-                        : 'border-border hover:border-primary/50'
-                    )}
-                  >
-                    <span className="block text-xs font-semibold">Razorpay</span>
-                    <span className="block text-[10px] text-muted-foreground">UPI / Card / Wallet</span>
-                  </button>
-                  <button
-                    onClick={() => { setPaymentGateway('cashfree'); setPaymentDone(false); setRazorpayPaymentId(null); }}
-                    className={cn(
-                      'rounded-xl border-2 px-3 py-3 text-center transition-all',
-                      paymentGateway === 'cashfree'
-                        ? 'border-primary bg-primary/5'
-                        : 'border-border hover:border-primary/50'
-                    )}
-                  >
-                    <span className="block text-xs font-semibold">Cashfree</span>
-                    <span className="block text-[10px] text-muted-foreground">Cards / UPI / NB</span>
-                  </button>
-                  <button
-                    onClick={() => { setPaymentGateway('phonepe'); setPaymentDone(false); setRazorpayPaymentId(null); }}
-                    className={cn(
-                      'rounded-xl border-2 px-3 py-3 text-center transition-all',
-                      paymentGateway === 'phonepe'
-                        ? 'border-primary bg-primary/5'
-                        : 'border-border hover:border-primary/50'
-                    )}
-                  >
-                    <span className="block text-xs font-semibold">PhonePe</span>
-                    <span className="block text-[10px] text-muted-foreground">UPI / Wallet</span>
-                  </button>
-                </div>
+              {/* Payment Gateway Info */}
+              <div className="mt-4 rounded-xl border-2 border-primary/20 bg-primary/5 px-4 py-3 text-center">
+                <p className="text-sm font-semibold text-primary">Payments processed securely via Razorpay</p>
+                <p className="text-xs text-muted-foreground">UPI / Credit Card / Debit Card / Net Banking / Wallets</p>
               </div>
 
               {/* Payment action area */}
@@ -1032,7 +945,7 @@ export default function CheckoutPage() {
                       {paymentProcessing ? (
                         <><Loader2 className="h-4 w-4 animate-spin" /> Processing...</>
                       ) : (
-                        <><CreditCard className="h-4 w-4" /> Pay {formatINR(amountToPayNow)} via {paymentGateway === 'razorpay' ? 'Razorpay' : paymentGateway === 'cashfree' ? 'Cashfree' : 'PhonePe'}</>
+                        <><CreditCard className="h-4 w-4" /> Pay {formatINR(amountToPayNow)} via Razorpay</>
                       )}
                     </Button>
                     <p className="mt-3 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">

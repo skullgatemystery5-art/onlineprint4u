@@ -211,8 +211,8 @@ export function OtpAddressModal({ open, onClose, onSuccess, title, description }
           </div>
         )}
 
-        {/* Hidden reCAPTCHA container for Firebase Phone Auth */}
-        <div id={RECAPTCHA_CONTAINER_ID} className="mt-2 min-h-[1px]" />
+        {/* reCAPTCHA container for Firebase Phone Auth — must be large enough for the widget to render */}
+        <div id={RECAPTCHA_CONTAINER_ID} className="mt-4 flex min-h-[78px] items-center justify-center" />
       </div>
     </div>
   );
