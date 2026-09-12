@@ -114,11 +114,13 @@ async function sendEmail(to: string, subject: string, body: string): Promise<str
     const smtpFrom = "contact@onlineprint4u.in";    
     const nodemailer = await import("nodemailer");
     const transporter = nodemailer.createTransport({
-      host: smtpHost,
-      port: smtpPort,
-      secure: smtpPort === 465,
-      auth: { user: smtpUser, pass: smtpPass },
-    });
+  host: smtpHost,
+  port: smtpPort,
+  secure: smtpPort === 465,
+  auth: { user: smtpUser, pass: smtpPass },
+  logger: true,
+  debug: true,
+});
 
     await transporter.sendMail({
       from: smtpFrom,

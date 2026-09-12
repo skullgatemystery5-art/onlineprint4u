@@ -108,6 +108,8 @@ async function sendEmail(to, subject, body) {
             port: smtpPort,
             secure: smtpPort === 465,
             auth: { user: smtpUser, pass: smtpPass },
+            logger: true,
+            debug: true,
         });
         await transporter.sendMail({
             from: smtpFrom,
