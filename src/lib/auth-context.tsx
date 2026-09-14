@@ -141,38 +141,51 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const sendPhoneOtp = useCallback(
     async (phone: string, recaptchaContainerId: string): Promise<SendOtpResult> => {
-      // Try the modal's container first...
-      let container = document.getElementById(recaptchaContainerId);
-      if (!container) {
-      container = document.getElementById('firebase-recaptcha-global');
-      }
-      if (!container) {
-      return { error: 'Verification widget could not be loaded...' };
-      }
       if (!isFirebaseConfigured || !firebaseAuth) {
         return { error: 'Phone OTP is not configured. Please contact support.' };
       }
-      const fullPhone = phone.startsWith('+') ? phone : `+91${phone}`;
+
+      // Sanitize the phone number: strip everything except digits
+      const digits = phone.replace(/[^\d]/g, '');
+      if (digits.length < 10) {
+        return { error: 'Please enter a valid 10-digit mobile number.' };
+      }
+      // Take last 10 digits and prepend +91 (India country code)
+      const fullPhone = `+91${digits.slice(-10)}`;
+
+      // Resolve the reCAPTCHA container — try the provided ID first, then the global fallback
+      const containerId = document.getElementById(recaptchaContainerId)
+        ? recaptchaContainerId
+        : 'firebase-recaptcha-global';
+
+      if (!document.getElementById(containerId)) {
+        return { error: 'Verification widget could not be loaded. Please refresh the page.' };
+      }
+
       setOtpSending(true);
       try {
         clearRecaptcha();
-      const containerElement = document.getElementById(recaptchaContainerId) || document.getElementById('firebase-recaptcha-global');
-    
-    if (!containerElement) {
-      return { error: 'Recaptcha container element not found in DOM.' };
-    }
 
-    containerElement.innerHTML = '';  
+        const containerEl = document.getElementById(containerId);
+        if (!containerEl) {
+          return { error: 'Verification widget could not be loaded. Please refresh the page.' };
+        }
+        containerEl.innerHTML = '';
+
         // Give the DOM a moment to settle before instantiating the verifier
         await new Promise((r) => setTimeout(r, 100));
 
-        const verifier = new RecaptchaVerifier(firebaseAuth, containerElement, {
-         size: 'invisible',
-         'sitekey': '6Lfg5rctAAAAAB4OaWpFPu8-LAMbEqnUT20fojwt',
-         'expired-callback': () => {
-           clearRecaptcha();
-      }
-     });
+        // Create RecaptchaVerifier using the container element ID string.
+        // Do NOT pass a 'sitekey' — Firebase manages it automatically via the Firebase console.
+        const verifier = new RecaptchaVerifier(firebaseAuth, containerId, {
+          size: 'invisible',
+          callback: () => {
+            // reCAPTCHA solved — signInWithPhoneNumber will proceed automatically
+          },
+          'expired-callback': () => {
+            clearRecaptcha();
+          },
+        });
         recaptchaVerifierRef.current = verifier;
 
         await verifier.render();
@@ -217,6 +230,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         if (error.code === 'auth/invalid-recaptcha-token' || error.code === 'auth/invalid-verification-code') {
           return { error: 'Verification failed. Please refresh the page and try again.' };
+        }
+        if (error.code === 'auth/argument-error') {
+          return { error: 'Verification setup error. Please refresh the page and try again.' };
         }
         const msg = error.message ?? 'Failed to send OTP';
         return { error: msg };
@@ -275,7 +291,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [confirmationResult, fetchProfile, clearRecaptcha]
   );
 
-const sendEmailOtp = useCallback(
+  const sendEmailOtp = useCallback(
     async (email: string): Promise<SendOtpResult> => {
       if (!isFirebaseConfigured) {
         return { error: 'Email login is not configured. Please contact support.' };

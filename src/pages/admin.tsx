@@ -20,6 +20,7 @@ import {
   Save,
   Loader2,
   Download,
+  ImagePlus,
   ChevronDown,
   ChevronRight,
   MapPin,
@@ -66,6 +67,7 @@ import {
   type ShippingRate,
 } from '@/lib/database';
 import { useAuth } from '@/lib/auth-context';
+import { useBrand } from '@/lib/brand-context';
 import { formatINR } from '@/lib/pricing';
 import { getOrderFileUrl } from '@/lib/storage';
 
@@ -74,6 +76,7 @@ const statusOptions = ['placed', 'processing', 'packed', 'shipped', 'out_for_del
 export default function AdminPage() {
   const navigate = useNavigate();
   const { user, profile, loading: authLoading } = useAuth();
+  const { logoUrl, uploadLogo, removeLogo } = useBrand();
   const [authorized, setAuthorized] = useState(false);
   const [checking, setChecking] = useState(true);
   const [checkError, setCheckError] = useState(false);
@@ -93,6 +96,8 @@ export default function AdminPage() {
   const [siteSettings, setSiteSettings] = useState<Record<string, string>>({});
   const [settingsForm, setSettingsForm] = useState<Record<string, string>>({});
   const [savingSettings, setSavingSettings] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [couponForm, setCouponForm] = useState({
     code: '',
     description: '',
@@ -281,6 +286,31 @@ export default function AdminPage() {
     } finally {
       setSavingSettings(false);
     }
+  };
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingLogo(true);
+    const result = await uploadLogo(file);
+    if (result.error) {
+      toast.error(result.error);
+    } else {
+      toast.success('Logo and favicon updated successfully.');
+    }
+    setUploadingLogo(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleLogoRemove = async () => {
+    setUploadingLogo(true);
+    const result = await removeLogo();
+    if (result.error) {
+      toast.error(result.error);
+    } else {
+      toast.success('Logo removed. Default icon restored.');
+    }
+    setUploadingLogo(false);
   };
 
   if (checkError) {
@@ -1114,6 +1144,57 @@ export default function AdminPage() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-6">
+                    <div>
+                      <h3 className="mb-3 font-display text-sm font-semibold">Brand Logo &amp; Favicon</h3>
+                      <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+                        <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-xl border-2 border-border bg-muted/30">
+                          {logoUrl ? (
+                            <img src={logoUrl} alt="Current logo" className="h-full w-full object-contain" />
+                          ) : (
+                            <ImagePlus className="h-8 w-8 text-muted-foreground" />
+                          )}
+                        </div>
+                        <div className="flex-1 space-y-3">
+                          <p className="text-sm text-muted-foreground">
+                            Upload a new logo to automatically update the favicon, browser tab icon, and branding across the entire site. Recommended: square PNG, 512x512px, under 2MB.
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            <input
+                              ref={fileInputRef}
+                              type="file"
+                              accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                              onChange={handleLogoUpload}
+                              className="hidden"
+                            />
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={uploadingLogo}
+                              onClick={() => fileInputRef.current?.click()}
+                            >
+                              {uploadingLogo ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <ImagePlus className="h-4 w-4" />
+                              )}
+                              {uploadingLogo ? 'Uploading...' : 'Upload Logo'}
+                            </Button>
+                            {logoUrl && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                disabled={uploadingLogo}
+                                onClick={handleLogoRemove}
+                              >
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                                Remove
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
                     <div>
                       <h3 className="mb-3 font-display text-sm font-semibold">UPI / QR Payment</h3>
                       <div className="grid gap-4 sm:grid-cols-2">

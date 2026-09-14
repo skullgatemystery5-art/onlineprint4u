@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { lazy, Suspense, useEffect } from 'react';
 import { AuthProvider } from '@/lib/auth-context';
 import { CartProvider } from '@/lib/cart-context';
+import { BrandProvider } from '@/lib/brand-context';
 import { Toaster } from '@/components/ui/sonner';
 import { FloatingWidgets } from '@/components/floating-widgets';
 import { Loader2 } from 'lucide-react';
@@ -48,6 +49,7 @@ function PageLoader() {
 export default function App() {
   return (
     <AuthProvider>
+      <BrandProvider>
       <CartProvider>
         <BrowserRouter>
           <ScrollToTop />
@@ -80,6 +82,7 @@ export default function App() {
           <div id="firebase-recaptcha-global" className="fixed bottom-0 left-0 z-[9999] min-h-[78px]" aria-hidden="true" />
         </BrowserRouter>
       </CartProvider>
+      </BrandProvider>
     </AuthProvider>
   );
 }
