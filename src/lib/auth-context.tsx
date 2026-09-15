@@ -71,10 +71,10 @@ function toAuthUser(fbUser: FirebaseUser): AuthUser {
 function getCloudFunctionUrl(endpoint: string): string {
   const region = import.meta.env.VITE_FIREBASE_FUNCTIONS_REGION || 'asia-south1';
   const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
-if (projectId) {
+  if (projectId) {
     return `https://${region}-${projectId}.cloudfunctions.net/${endpoint}`;
-}
-return `/${endpoint}`;
+  }
+  return `/${endpoint}`;
 }
 
 const RECAPTCHA_SITE_KEY = import.meta.env.VITE_RECAPTCHA_ENTERPRISE_SITE_KEY || '';
@@ -117,7 +117,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       recaptchaVerifierRef.current = null;
     }
-    if (recaptchaContainerEl) {
+    if (recaptchaContainerEl && recaptchaContainerEl.parentNode) {
       recaptchaContainerEl.innerHTML = '';
     }
   }, []);
@@ -171,12 +171,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: 'Phone OTP is not configured. Please contact support.' };
       }
 
-      // Sanitize the phone number: strip everything except digits
       const digits = phone.replace(/[^\d]/g, '');
       if (digits.length < 10) {
         return { error: 'Please enter a valid 10-digit mobile number.' };
       }
-      // Take last 10 digits and prepend +91 (India country code)
       const fullPhone = `+91${digits.slice(-10)}`;
 
       setOtpSending(true);
@@ -186,38 +184,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const container = getRecaptchaContainer();
         container.innerHTML = '';
 
-        // Give the DOM a moment to settle before instantiating the verifier
-        await new Promise((r) => setTimeout(r, 50));
+        await new Promise((r) => setTimeout(r, 100));
 
-        // Create invisible RecaptchaVerifier
-        const verifierParams: Record<string, unknown> = {
+        // Fix for argument-error: ensuring element is in DOM and options are clean
+        if (!document.body.contains(container)) {
+          document.body.appendChild(container);
+        }
+
+        const verifier = new RecaptchaVerifier(firebaseAuth, container, {
           size: 'invisible',
-          callback: () => {
-            // reCAPTCHA solved — signInWithPhoneNumber proceeds automatically
-          },
+          callback: () => {},
           'expired-callback': () => {
             clearRecaptcha();
           },
-        };
-
-        if (RECAPTCHA_SITE_KEY) {
-          verifierParams.sitekey = RECAPTCHA_SITE_KEY;
-        }
-
-        const verifier = new RecaptchaVerifier(firebaseAuth, container, verifierParams);
+        });
+        
         recaptchaVerifierRef.current = verifier;
-
         await verifier.render();
 
         const timeoutPromise = new Promise<never>((_, reject) => {
           setTimeout(() => reject(new Error('RECAPTCHA_TIMEOUT')), 30000);
         });
 
-        console.log("Checking phone number:", fullPhone);
         const result = await Promise.race([
           signInWithPhoneNumber(firebaseAuth, fullPhone, verifier),
           timeoutPromise,
         ]);
+        
         setConfirmationResult(result);
         return { error: null };
       } catch (err) {
@@ -226,16 +219,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         clearRecaptcha();
 
         if (error.message === 'RECAPTCHA_TIMEOUT') {
-          return {
-            error: 'Verification timed out. Please try again.',
-            cooldownSec: 30,
-          };
+          return { error: 'Verification timed out. Please try again.', cooldownSec: 30 };
         }
         if (error.code === 'auth/too-many-requests') {
-          return {
-            error: 'Too many OTP requests. Please wait before requesting another code.',
-            cooldownSec: 60,
-          };
+          return { error: 'Too many OTP requests. Please wait before requesting another code.', cooldownSec: 60 };
         }
         if (error.code === 'auth/invalid-phone-number') {
           return { error: 'Invalid phone number. Please check and try again.' };
@@ -255,8 +242,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (error.code === 'auth/argument-error') {
           return { error: 'Verification setup error. Please try again.', cooldownSec: 15 };
         }
-        const msg = error.message ?? 'Failed to send OTP';
-        return { error: msg };
+        return { error: error.message ?? 'Failed to send OTP' };
       } finally {
         setOtpSending(false);
       }
@@ -291,7 +277,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         });
 
         await fetchProfile(authUser.uid);
-
         clearRecaptcha();
         setConfirmationResult(null);
         return { error: null };
@@ -324,18 +309,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const apiUrl = getCloudFunctionUrl('sendOtp');
         const res = await fetch(apiUrl, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email, otp: generatedOtp }),
         });
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
           if (res.status === 429) {
-            return {
-              error: 'Too many OTP requests. Please wait before requesting another code.',
-              cooldownSec: 60,
-            };
+            return { error: 'Too many OTP requests. Please wait before requesting another code.', cooldownSec: 60 };
           }
           return { error: body.error || 'Failed to send OTP. Please try again.' };
         }
@@ -362,9 +342,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const apiUrl = getCloudFunctionUrl('verifyOtp');
         const res = await fetch(apiUrl, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email, otp: token }),
         });
         if (!res.ok) {
@@ -401,8 +379,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (error.code === 'auth/invalid-custom-token') {
           return { error: 'Login failed — invalid token. Please try again.' };
         }
-        const msg = error.message ?? 'Verification failed. Please try again.';
-        return { error: msg };
+        return { error: error.message ?? 'Verification failed. Please try again.' };
       }
     },
     [fetchProfile]
@@ -446,8 +423,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (error.code === 'auth/too-many-requests') {
           return { error: 'Too many failed attempts. Please try again later.' };
         }
-        const msg = error.message ?? 'Login failed. Please try again.';
-        return { error: msg };
+        return { error: error.message ?? 'Login failed. Please try again.' };
       }
     },
     [fetchProfile]
@@ -467,8 +443,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (error.code === 'auth/user-not-found') {
           return { error: 'No account found with this email address.' };
         }
-        const msg = error.message ?? 'Failed to send reset email. Please try again.';
-        return { error: msg };
+        return { error: error.message ?? 'Failed to send reset email. Please try again.' };
       }
     },
     []
