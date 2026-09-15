@@ -77,7 +77,7 @@ function getCloudFunctionUrl(endpoint: string): string {
   return `/${endpoint}`;
 }
 
-const RECAPTCHA_SITE_KEY = import.meta.env.VITE_RECAPTCHA_ENTERPRISE_SITE_KEY || '';
+
 
 let recaptchaContainerEl: HTMLDivElement | null = null;
 
