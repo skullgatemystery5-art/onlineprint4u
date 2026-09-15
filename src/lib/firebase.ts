@@ -27,8 +27,8 @@ if (isFirebaseConfigured) {
     firebaseAuth = getAuth(app);
     db = getFirestore(app);
     storage = getStorage(app);
-  } catch {
-    // Firebase config is invalid — app should still work without phone OTP
+  } catch (err) {
+    console.error('[Firebase] Initialization failed:', err);
   }
 }
 

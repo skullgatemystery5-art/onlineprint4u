@@ -185,7 +185,8 @@ export async function getProfile(uid: string): Promise<Profile | null> {
     const snap = await getDoc(doc(db, 'profiles', uid));
     if (!snap.exists()) return null;
     return normalizeDoc<Profile>(snap.data(), snap.id);
-  } catch {
+  } catch (err) {
+    console.error('[DB] getProfile failed:', err);
     return null;
   }
 }
@@ -201,8 +202,8 @@ export async function upsertProfile(profile: Omit<Profile, 'created_at' | 'updat
       },
       { merge: true }
     );
-  } catch {
-    // non-blocking
+  } catch (err) {
+    console.error('[DB] upsertProfile failed:', err);
   }
 }
 
@@ -221,7 +222,8 @@ export async function getAllProfiles(): Promise<Profile[]> {
     return snap.docs
       .map((d) => normalizeDoc<Profile>(d.data(), d.id))
       .filter((p): p is Profile => p !== null);
-  } catch {
+  } catch (err) {
+    console.error('[DB] getAllProfiles failed:', err);
     return [];
   }
 }

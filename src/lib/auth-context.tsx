@@ -222,6 +222,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: null };
       } catch (err) {
         const error = err as { code?: string; message?: string };
+        console.error('[Phone OTP] Failed to send OTP:', error.code ?? 'unknown', error.message ?? err);
         clearRecaptcha();
 
         if (error.message === 'RECAPTCHA_TIMEOUT') {
@@ -296,6 +297,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: null };
       } catch (err) {
         const error = err as { code?: string; message?: string };
+        console.error('[Phone OTP] Failed to verify OTP:', error.code ?? 'unknown', error.message ?? err);
         if (error.code === 'auth/invalid-verification-code') {
           return { error: 'Invalid verification code. Please check and try again.' };
         }
@@ -341,6 +343,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (data.error) return { error: data.error };
         return { error: null };
       } catch (err) {
+        console.error('[Email OTP] Failed to send OTP:', err);
         const msg = err instanceof Error ? err.message : 'Failed to send OTP';
         return { error: msg };
       } finally {
@@ -394,6 +397,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: null };
       } catch (err) {
         const error = err as { code?: string; message?: string };
+        console.error('[Email OTP] Failed to verify OTP:', error.code ?? 'unknown', error.message ?? err);
         if (error.code === 'auth/invalid-custom-token') {
           return { error: 'Login failed — invalid token. Please try again.' };
         }
@@ -435,6 +439,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: null };
       } catch (err) {
         const error = err as { code?: string; message?: string };
+        console.error('[Admin Login] Failed:', error.code ?? 'unknown', error.message ?? err);
         if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found') {
           return { error: 'Invalid email or password.' };
         }
@@ -458,6 +463,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: null };
       } catch (err) {
         const error = err as { code?: string; message?: string };
+        console.error('[Admin Reset] Failed:', error.code ?? 'unknown', error.message ?? err);
         if (error.code === 'auth/user-not-found') {
           return { error: 'No account found with this email address.' };
         }
