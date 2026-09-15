@@ -71,10 +71,10 @@ function toAuthUser(fbUser: FirebaseUser): AuthUser {
 function getCloudFunctionUrl(endpoint: string): string {
   const region = import.meta.env.VITE_FIREBASE_FUNCTIONS_REGION || 'asia-south1';
   const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
-  if (projectId) {
-    return https://${region}-${projectId}.cloudfunctions.net/${endpoint};
-  }
-  return /${endpoint};
+if (projectId) {
+    return `https://${region}-${projectId}.cloudfunctions.net/${endpoint}`;
+}
+return `/${endpoint}`;
 }
 
 const RECAPTCHA_SITE_KEY = import.meta.env.VITE_RECAPTCHA_ENTERPRISE_SITE_KEY || '';
@@ -177,7 +177,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: 'Please enter a valid 10-digit mobile number.' };
       }
       // Take last 10 digits and prepend +91 (India country code)
-      const fullPhone = +91${digits.slice(-10)};
+      const fullPhone = `+91${digits.slice(-10)}`;
 
       setOtpSending(true);
       try {
