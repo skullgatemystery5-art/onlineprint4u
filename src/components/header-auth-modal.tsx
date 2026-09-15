@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   X,
+  Phone,
   Mail,
   ShieldCheck,
   Loader2,
@@ -25,13 +26,18 @@ type AuthModalProps = {
   mode: 'signin' | 'signup';
 };
 
+type AuthMethod = 'phone' | 'email';
 type Step = 'credentials' | 'otp';
 
+const RECAPTCHA_CONTAINER_ID = 'firebase-recaptcha-container';
+
 export function HeaderAuthModal({ open, onClose, mode }: AuthModalProps) {
-  const { sendEmailOtp, verifyEmailOtp, otpSending } = useAuth();
+  const { sendPhoneOtp, verifyPhoneOtp, sendEmailOtp, verifyEmailOtp, otpSending } = useAuth();
   const { secondsLeft, isCoolingDown, startCooldown } = useCountdown();
+  const [method, setMethod] = useState<AuthMethod>('phone');
   const [step, setStep] = useState<Step>('credentials');
   const [loading, setLoading] = useState(false);
+  const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
   const [otp, setOtp] = useState('');
@@ -42,10 +48,19 @@ export function HeaderAuthModal({ open, onClose, mode }: AuthModalProps) {
       setStep('credentials');
       setOtp('');
       setLoading(false);
+      const container = document.getElementById(RECAPTCHA_CONTAINER_ID);
+      if (container) container.innerHTML = '';
     }
   }, [open]);
 
+  const phoneValid = /^\d{10}$/.test(phone);
   const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
+  const switchMethod = (m: AuthMethod) => {
+    setMethod(m);
+    setStep('credentials');
+    setOtp('');
+  };
 
   const handleSendOtp = useCallback(async () => {
     if (mode === 'signup' && !name.trim()) {
@@ -53,64 +68,93 @@ export function HeaderAuthModal({ open, onClose, mode }: AuthModalProps) {
       return;
     }
 
-    if (!emailValid) {
-      toast.error('Please enter a valid email address.');
-      return;
+    if (method === 'email') {
+      if (!emailValid) {
+        toast.error('Please enter a valid email address.');
+        return;
+      }
+      setLoading(true);
+      const { error, cooldownSec } = await sendEmailOtp(email);
+      setLoading(false);
+      if (error) {
+        toast.error(error);
+        if (cooldownSec) startCooldown(cooldownSec);
+        return;
+      }
+      toast.success('Verification code sent to your email.');
+    } else {
+      if (!phoneValid) {
+        toast.error('Please enter a valid 10-digit mobile number.');
+        return;
+      }
+      setLoading(true);
+      const { error, cooldownSec } = await sendPhoneOtp(phone);
+      setLoading(false);
+      if (error) {
+        toast.error(error);
+        if (cooldownSec) startCooldown(cooldownSec);
+        return;
+      }
+      toast.success(`OTP sent to +91 ${phone}`);
     }
-
-    setLoading(true);
-    const { error, cooldownSec } = await sendEmailOtp(email);
-    setLoading(false);
-
-    if (error) {
-      toast.error(error);
-      if (cooldownSec) startCooldown(cooldownSec);
-      return;
-    }
-
-    toast.success('Verification code sent to your email.');
     setStep('otp');
-  }, [email, emailValid, name, mode, sendEmailOtp, startCooldown]);
+  }, [method, phone, phoneValid, email, emailValid, name, mode, sendEmailOtp, sendPhoneOtp, startCooldown]);
 
   const handleVerifyOtp = useCallback(async () => {
     if (otp.length !== 6) {
       toast.error('Please enter the 6-digit verification code.');
       return;
     }
-
     setLoading(true);
-    const { error } = await verifyEmailOtp(email, otp);
+    const { error } =
+      method === 'email'
+        ? await verifyEmailOtp(email, otp)
+        : await verifyPhoneOtp(otp);
     setLoading(false);
-
     if (error) {
       toast.error(error);
       return;
     }
-
     toast.success(mode === 'signup' ? 'Account created! Welcome to Online Print 4U.' : 'Welcome back!');
     onClose();
-  }, [otp, email, verifyEmailOtp, mode, onClose]);
+  }, [otp, method, email, verifyEmailOtp, verifyPhoneOtp, mode, onClose]);
 
   const handleResendOtp = useCallback(async () => {
-    if (isCoolingDown || !emailValid) return;
-
-    setLoading(true);
-    const { error, cooldownSec } = await sendEmailOtp(email);
-    setLoading(false);
-
-    if (error) {
-      toast.error(error);
-      if (cooldownSec) startCooldown(cooldownSec);
-      return;
+    if (isCoolingDown) return;
+    if (method === 'email') {
+      if (!emailValid) return;
+      setLoading(true);
+      const { error, cooldownSec } = await sendEmailOtp(email);
+      setLoading(false);
+      if (error) {
+        toast.error(error);
+        if (cooldownSec) startCooldown(cooldownSec);
+        return;
+      }
+      toast.success('New verification code sent to your email.');
+    } else {
+      if (!phoneValid) return;
+      setLoading(true);
+      const container = document.getElementById(RECAPTCHA_CONTAINER_ID);
+      if (container) container.innerHTML = '';
+      const { error, cooldownSec } = await sendPhoneOtp(phone);
+      setLoading(false);
+      if (error) {
+        toast.error(error);
+        if (cooldownSec) startCooldown(cooldownSec);
+        return;
+      }
+      toast.success('New OTP sent to +91 ' + phone);
     }
-
-    toast.success('New verification code sent to your email.');
-  }, [email, emailValid, sendEmailOtp, isCoolingDown, startCooldown]);
+  }, [method, phone, phoneValid, email, emailValid, sendEmailOtp, sendPhoneOtp, isCoolingDown, startCooldown]);
 
   if (!open) return null;
 
   const isSignup = mode === 'signup';
-  const canSubmit = emailValid && !loading && !otpSending && (!isSignup || name.trim());
+  const canSubmit =
+    method === 'email'
+      ? emailValid && !loading && !otpSending && (!isSignup || name.trim())
+      : phoneValid && !loading && !otpSending && (!isSignup || name.trim());
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
@@ -140,9 +184,31 @@ export function HeaderAuthModal({ open, onClose, mode }: AuthModalProps) {
               {isSignup ? 'Create your account' : 'Sign in to your account'}
             </h2>
             <p className="text-sm text-muted-foreground">
-              {isSignup ? 'Join Online Print 4U via Email' : 'Welcome back to Online Print 4U'}
+              {isSignup ? 'Join Online Print 4U in seconds' : 'Welcome back to Online Print 4U'}
             </p>
           </div>
+        </div>
+
+        {/* Phone / Email tab switcher */}
+        <div className="mb-5 grid grid-cols-2 gap-1 rounded-xl bg-muted p-1">
+          <button
+            onClick={() => switchMethod('phone')}
+            className={cn(
+              'flex items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-medium transition-colors',
+              method === 'phone' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+            )}
+          >
+            <Phone className="h-4 w-4" /> Phone
+          </button>
+          <button
+            onClick={() => switchMethod('email')}
+            className={cn(
+              'flex items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-medium transition-colors',
+              method === 'email' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+            )}
+          >
+            <Mail className="h-4 w-4" /> Email
+          </button>
         </div>
 
         {step === 'credentials' && (
@@ -163,20 +229,39 @@ export function HeaderAuthModal({ open, onClose, mode }: AuthModalProps) {
               </div>
             )}
 
-            <div className="space-y-2">
-              <Label htmlFor="auth-email">Email Address</Label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  id="auth-email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@example.com"
-                  className="pl-10"
-                />
+            {method === 'email' ? (
+              <div className="space-y-2">
+                <Label htmlFor="auth-email">Email Address</Label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    id="auth-email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    className="pl-10"
+                  />
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="space-y-2">
+                <Label htmlFor="auth-phone">Mobile Number</Label>
+                <div className="flex items-center gap-2">
+                  <div className="flex h-10 items-center rounded-lg border border-input bg-muted px-3 text-sm font-medium">
+                    +91
+                  </div>
+                  <Input
+                    id="auth-phone"
+                    type="tel"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                    placeholder="10-digit number"
+                    className="flex-1"
+                  />
+                </div>
+              </div>
+            )}
 
             <Button
               className="w-full gap-2"
@@ -193,7 +278,9 @@ export function HeaderAuthModal({ open, onClose, mode }: AuthModalProps) {
             </Button>
 
             <p className="text-center text-xs text-muted-foreground">
-              A 6-digit code will be sent to your email for verification.
+              {method === 'email'
+                ? 'A 6-digit code will be sent to your email for verification.'
+                : 'An SMS with a 6-digit code will be sent to verify your number.'}
             </p>
           </div>
         )}
@@ -203,7 +290,9 @@ export function HeaderAuthModal({ open, onClose, mode }: AuthModalProps) {
             <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4 text-sm">
               <p className="text-muted-foreground">
                 Enter the 6-digit code sent to{' '}
-                <span className="font-bold text-foreground">{email}</span>
+                <span className="font-bold text-foreground">
+                  {method === 'email' ? email : `+91 ${phone}`}
+                </span>
               </p>
             </div>
 
@@ -261,6 +350,9 @@ export function HeaderAuthModal({ open, onClose, mode }: AuthModalProps) {
             )}
           </div>
         )}
+
+        {/* reCAPTCHA container — required by Firebase Phone Auth */}
+        <div id={RECAPTCHA_CONTAINER_ID} className="mt-4 flex min-h-[78px] items-center justify-center" />
       </div>
     </div>
   );
