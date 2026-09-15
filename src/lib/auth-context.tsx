@@ -213,9 +213,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const timeoutPromise = new Promise<never>((_, reject) => {
           setTimeout(() => reject(new Error('RECAPTCHA_TIMEOUT')), 30000);
         });
-        const fullPhone = phone.startsWith('+') ? phone : '+91' + phone;
-        console.log("डबगिंग - फोन नंबर आया:", phone);
-        console.log("डबगिंग - फुल फोन नंबर बना:", fullPhone); 
+
         const result = await Promise.race([
           signInWithPhoneNumber(firebaseAuth, fullPhone, verifier),
           timeoutPromise,
@@ -223,58 +221,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setConfirmationResult(result);
         return { error: null };
       } catch (err) {
-     const error = err as { code?: string; message?: string };
-  console.error('[Phone OTP] Failed to send OTP:', error.code ?? 'unknown', error.message ?? 'unknown');
-  clearRecaptcha();
+        const error = err as { code?: string; message?: string };
+        console.error('[Phone OTP] Failed to send OTP:', error.code ?? 'unknown', error.message ?? err);
+        clearRecaptcha();
 
-  if (error.message === 'RECAPTCHA_TIMEOUT') {
-    return {
-      error: 'Verification timed out. Please try again.',
-      cooldownSec: 30,
-    };
-  }
-  if (error.code === 'auth/too-many-requests') {
-    return {
-      error: 'Too many OTP requests. Please wait before requesting another code.',
-      cooldownSec: 60,
-    };
-  }
-  if (error.code === 'auth/invalid-phone-number') {
-    return {
-      error: 'Invalid phone number. Please check and try again.',
-    };
-  }
-  if (error.code === 'auth/captcha-check-failed') {
-    return {
-      error: 'Verification check failed. Please try again.',
-      cooldownSec: 15,
-    };
-  }
-  if (error.code === 'auth/operation-not-allowed') {
-    return {
-      error: 'Phone login is not enabled. Please contact support.',
-    };
-  }
-  if (error.code === 'auth/quota-exceeded') {
-    return {
-      error: 'SMS quota exceeded. Please try again later or use email login.',
-    };
-  }
-  if (error.code === 'auth/invalid-recaptcha-token' || error.code === 'auth/invalid-verification-code') {
-    return {
-      error: 'Verification failed. Please try again.',
-      cooldownSec: 15,
-    };
-  }
-  if (error.code === 'auth/argument-error') {
-    return {
-      error: 'Verification setup error. Please try again.',
-      cooldownSec: 15,
-    };
-  }
-
-  const msg = error.message ?? 'Failed to send OTP';
-  return { error: msg };
+        if (error.message === 'RECAPTCHA_TIMEOUT') {
+          return {
+            error: 'Verification timed out. Please try again.',
+            cooldownSec: 30,
+          };
+        }
+        if (error.code === 'auth/too-many-requests') {
+          return {
+            error: 'Too many OTP requests. Please wait before requesting another code.',
+            cooldownSec: 60,
+          };
+        }
+        if (error.code === 'auth/invalid-phone-number') {
+          return { error: 'Invalid phone number. Please check and try again.' };
+        }
+        if (error.code === 'auth/captcha-check-failed') {
+          return { error: 'Verification check failed. Please try again.', cooldownSec: 15 };
+        }
+        if (error.code === 'auth/operation-not-allowed') {
+          return { error: 'Phone login is not enabled. Please contact support.' };
+        }
+        if (error.code === 'auth/quota-exceeded') {
+          return { error: 'SMS quota exceeded. Please try again later or use email login.' };
+        }
+        if (error.code === 'auth/invalid-recaptcha-token' || error.code === 'auth/invalid-verification-code') {
+          return { error: 'Verification failed. Please try again.', cooldownSec: 15 };
+        }
+        if (error.code === 'auth/argument-error') {
+          return { error: 'Verification setup error. Please try again.', cooldownSec: 15 };
+        }
+        const msg = error.message ?? 'Failed to send OTP';
+        return { error: msg };
       } finally {
         setOtpSending(false);
       }
