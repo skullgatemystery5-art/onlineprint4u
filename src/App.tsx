@@ -22,8 +22,6 @@ const OrderSuccessPage = lazy(() => import('@/pages/order-success'));
 const OrderFailedPage = lazy(() => import('@/pages/order-failed'));
 const ForgotPasswordPage = lazy(() => import('@/pages/forgot-password'));
 const NotFoundPage = lazy(() => import('@/pages/not-found'));
-const CaptchaDemo = lazy(() => import('@/components/captcha-demo'));
-
 function ScrollToTop() {
   const { pathname } = useLocation();
   useEffect(() => {
@@ -71,15 +69,11 @@ export default function App() {
               <Route path="/delivery-details" element={<DeliveryDetailsPage />} />
               <Route path="/order/success" element={<OrderSuccessPage />} />
               <Route path="/order/failed" element={<OrderFailedPage />} />
-              <Route path="/captcha" element={<CaptchaDemo />} />
               <Route path="*" element={<NotFoundPage />} />
             </Routes>
           </Suspense>
           <FloatingWidgetsOnNonHome />
           <Toaster />
-          {/* Persistent global reCAPTCHA container — Firebase Phone Auth needs a DOM element that always exists.
-              This acts as a fallback so the verifier can always render even if a modal hasn't mounted its own container yet. */}
-          <div id="firebase-recaptcha-global" className="fixed bottom-0 left-0 z-[9999] min-h-[78px]" aria-hidden="true" />
         </BrowserRouter>
       </CartProvider>
       </BrandProvider>

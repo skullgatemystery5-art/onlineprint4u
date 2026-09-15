@@ -13,8 +13,6 @@ import { cn } from '@/lib/utils';
 type LoginMode = 'email' | 'phone';
 type LoginStep = 'credentials' | 'otp';
 
-const RECAPTCHA_CONTAINER_ID = 'login-recaptcha-container';
-
 export default function LoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -51,7 +49,7 @@ export default function LoginPage() {
         return;
       }
       setLoading(true);
-      const { error, cooldownSec } = await sendPhoneOtp(phone, RECAPTCHA_CONTAINER_ID);
+      const { error, cooldownSec } = await sendPhoneOtp(phone);
       setLoading(false);
       if (error) {
         toast.error(error);
@@ -62,6 +60,7 @@ export default function LoginPage() {
     }
     setStep('otp');
   }, [mode, email, phone, sendEmailOtp, sendPhoneOtp, startCooldown]);
+
 
   const handleVerify = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
@@ -88,13 +87,6 @@ export default function LoginPage() {
     setStep('credentials');
     setOtp('');
   };
-
-  useEffect(() => {
-    return () => {
-      const container = document.getElementById(RECAPTCHA_CONTAINER_ID);
-      if (container) container.innerHTML = '';
-    };
-  }, []);
 
   return (
     <AuthShell
@@ -218,9 +210,6 @@ export default function LoginPage() {
           </div>
         </form>
       )}
-
-      {/* reCAPTCHA container for Firebase Phone Auth */}
-      <div id={RECAPTCHA_CONTAINER_ID} className="mt-4 flex min-h-[78px] items-center justify-center" />
 
       <div className="mt-6 text-center">
         <Link to="/" className="text-sm text-muted-foreground hover:text-foreground">

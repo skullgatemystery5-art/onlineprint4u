@@ -14,8 +14,6 @@ import { cn } from '@/lib/utils';
 type SignupMode = 'email' | 'phone';
 type SignupStep = 'details' | 'otp';
 
-const RECAPTCHA_CONTAINER_ID = 'signup-recaptcha-container';
-
 export default function SignupPage() {
   const navigate = useNavigate();
   const { user: authUser, sendPhoneOtp, verifyPhoneOtp, sendEmailOtp, verifyEmailOtp, otpSending } = useAuth();
@@ -55,7 +53,7 @@ export default function SignupPage() {
         return;
       }
       setLoading(true);
-      const { error, cooldownSec } = await sendPhoneOtp(phone, RECAPTCHA_CONTAINER_ID);
+      const { error, cooldownSec } = await sendPhoneOtp(phone);
       setLoading(false);
       if (error) {
         toast.error(error);
@@ -106,13 +104,6 @@ export default function SignupPage() {
     setStep('details');
     setOtp('');
   };
-
-  useEffect(() => {
-    return () => {
-      const container = document.getElementById(RECAPTCHA_CONTAINER_ID);
-      if (container) container.innerHTML = '';
-    };
-  }, []);
 
   return (
     <AuthShell
@@ -250,9 +241,6 @@ export default function SignupPage() {
           </div>
         </form>
       )}
-
-      {/* reCAPTCHA container for Firebase Phone Auth */}
-      <div id={RECAPTCHA_CONTAINER_ID} className="mt-4 flex min-h-[78px] items-center justify-center" />
 
       <div className="mt-6 text-center">
         <Link to="/" className="text-sm text-muted-foreground hover:text-foreground">

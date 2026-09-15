@@ -13,6 +13,7 @@ interface ImportMetaEnv {
   readonly VITE_CASHFREE_SECRET_KEY: string;
   readonly VITE_PHONEPE_MERCHANT_ID: string;
   readonly VITE_PHONEPE_SALT_KEY: string;
+  readonly VITE_RECAPTCHA_ENTERPRISE_SITE_KEY: string;
 }
 
 interface ImportMeta {

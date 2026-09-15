@@ -35,7 +35,7 @@ type AuthContextType = {
   otpSending: boolean;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
-  sendPhoneOtp: (phone: string, recaptchaContainerId: string) => Promise<SendOtpResult>;
+  sendPhoneOtp: (phone: string) => Promise<SendOtpResult>;
   verifyPhoneOtp: (otp: string) => Promise<{ error: string | null }>;
   sendEmailOtp: (email: string) => Promise<SendOtpResult>;
   verifyEmailOtp: (email: string, token: string) => Promise<{ error: string | null }>;
@@ -77,6 +77,28 @@ function getCloudFunctionUrl(endpoint: string): string {
   return `/${endpoint}`;
 }
 
+const RECAPTCHA_SITE_KEY = import.meta.env.VITE_RECAPTCHA_ENTERPRISE_SITE_KEY || '';
+
+let recaptchaContainerEl: HTMLDivElement | null = null;
+
+function getRecaptchaContainer(): HTMLDivElement {
+  if (!recaptchaContainerEl) {
+    recaptchaContainerEl = document.createElement('div');
+    recaptchaContainerEl.id = 'firebase-recaptcha-invisible';
+    recaptchaContainerEl.style.position = 'fixed';
+    recaptchaContainerEl.style.bottom = '0';
+    recaptchaContainerEl.style.left = '0';
+    recaptchaContainerEl.style.width = '0';
+    recaptchaContainerEl.style.height = '0';
+    recaptchaContainerEl.style.overflow = 'hidden';
+    recaptchaContainerEl.style.zIndex = '-1';
+    recaptchaContainerEl.style.visibility = 'hidden';
+    recaptchaContainerEl.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(recaptchaContainerEl);
+  }
+  return recaptchaContainerEl;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -94,6 +116,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // ignore
       }
       recaptchaVerifierRef.current = null;
+    }
+    if (recaptchaContainerEl) {
+      recaptchaContainerEl.innerHTML = '';
     }
   }, []);
 
@@ -136,11 +161,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       if (unsubFb) unsubFb();
+      clearRecaptcha();
     };
-  }, [fetchProfile]);
+  }, [fetchProfile, clearRecaptcha]);
 
   const sendPhoneOtp = useCallback(
-    async (phone: string, recaptchaContainerId: string): Promise<SendOtpResult> => {
+    async (phone: string): Promise<SendOtpResult> => {
       if (!isFirebaseConfigured || !firebaseAuth) {
         return { error: 'Phone OTP is not configured. Please contact support.' };
       }
@@ -153,39 +179,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Take last 10 digits and prepend +91 (India country code)
       const fullPhone = `+91${digits.slice(-10)}`;
 
-      // Resolve the reCAPTCHA container — try the provided ID first, then the global fallback
-      const containerId = document.getElementById(recaptchaContainerId)
-        ? recaptchaContainerId
-        : 'firebase-recaptcha-global';
-
-      if (!document.getElementById(containerId)) {
-        return { error: 'Verification widget could not be loaded. Please refresh the page.' };
-      }
-
       setOtpSending(true);
       try {
         clearRecaptcha();
 
-        const containerEl = document.getElementById(containerId);
-        if (!containerEl) {
-          return { error: 'Verification widget could not be loaded. Please refresh the page.' };
-        }
-        containerEl.innerHTML = '';
+        const container = getRecaptchaContainer();
+        container.innerHTML = '';
 
         // Give the DOM a moment to settle before instantiating the verifier
-        await new Promise((r) => setTimeout(r, 100));
+        await new Promise((r) => setTimeout(r, 50));
 
-        // Create RecaptchaVerifier using the container element ID string.
-        // Do NOT pass a 'sitekey' — Firebase manages it automatically via the Firebase console.
-        const verifier = new RecaptchaVerifier(firebaseAuth, containerId, {
+        // Create invisible RecaptchaVerifier with the Enterprise site key.
+        // The verifier renders into a hidden container — no visible widget is shown to the user.
+        const verifierParams: Record<string, unknown> = {
           size: 'invisible',
           callback: () => {
-            // reCAPTCHA solved — signInWithPhoneNumber will proceed automatically
+            // reCAPTCHA solved — signInWithPhoneNumber proceeds automatically
           },
           'expired-callback': () => {
             clearRecaptcha();
           },
-        });
+        };
+
+        if (RECAPTCHA_SITE_KEY) {
+          verifierParams.sitekey = RECAPTCHA_SITE_KEY;
+        }
+
+        const verifier = new RecaptchaVerifier(firebaseAuth, container, verifierParams);
         recaptchaVerifierRef.current = verifier;
 
         await verifier.render();
@@ -220,7 +240,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return { error: 'Invalid phone number. Please check and try again.' };
         }
         if (error.code === 'auth/captcha-check-failed') {
-          return { error: 'Verification check failed. Please try again.' };
+          return { error: 'Verification check failed. Please try again.', cooldownSec: 15 };
         }
         if (error.code === 'auth/operation-not-allowed') {
           return { error: 'Phone login is not enabled. Please contact support.' };
@@ -229,10 +249,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return { error: 'SMS quota exceeded. Please try again later or use email login.' };
         }
         if (error.code === 'auth/invalid-recaptcha-token' || error.code === 'auth/invalid-verification-code') {
-          return { error: 'Verification failed. Please refresh the page and try again.' };
+          return { error: 'Verification failed. Please try again.', cooldownSec: 15 };
         }
         if (error.code === 'auth/argument-error') {
-          return { error: 'Verification setup error. Please refresh the page and try again.' };
+          return { error: 'Verification setup error. Please try again.', cooldownSec: 15 };
         }
         const msg = error.message ?? 'Failed to send OTP';
         return { error: msg };
@@ -481,7 +501,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }}
     >
       {children}
-      <div id="firebase-recaptcha-global" style={{ display: 'none' }}></div>
     </AuthContext.Provider>
   );
 }
