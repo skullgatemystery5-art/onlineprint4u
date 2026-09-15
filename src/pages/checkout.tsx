@@ -189,7 +189,7 @@ export default function CheckoutPage() {
       return;
     }
     setAuthBusy(true);
-    const { error } = await sendPhoneOtp(cleaned, 'checkout-recaptcha-container');
+    const { error } = await sendPhoneOtp(cleaned);
     setAuthBusy(false);
     if (error) {
       toast.error(error);

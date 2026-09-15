@@ -88,7 +88,7 @@ export function HeaderAuthModal({ open, onClose, mode }: AuthModalProps) {
         return;
       }
       setLoading(true);
-      const { error, cooldownSec } = await sendPhoneOtp(phone, RECAPTCHA_CONTAINER_ID);
+      const { error, cooldownSec } = await sendPhoneOtp(phone);
       setLoading(false);
       if (error) {
         toast.error(error);
@@ -137,7 +137,7 @@ export function HeaderAuthModal({ open, onClose, mode }: AuthModalProps) {
       setLoading(true);
       const container = document.getElementById(RECAPTCHA_CONTAINER_ID);
       if (container) container.innerHTML = '';
-      const { error, cooldownSec } = await sendPhoneOtp(phone, RECAPTCHA_CONTAINER_ID);
+      const { error, cooldownSec } = await sendPhoneOtp(phone);
       setLoading(false);
       if (error) {
         toast.error(error);

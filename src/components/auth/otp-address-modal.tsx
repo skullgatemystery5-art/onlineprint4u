@@ -53,7 +53,7 @@ export function OtpAddressModal({ open, onClose, onSuccess, title, description }
       return;
     }
     setLoading(true);
-    const { error } = await sendPhoneOtp(phone, RECAPTCHA_CONTAINER_ID);
+    const { error } = await sendPhoneOtp(phone);
     setLoading(false);
     if (error) {
       toast.error(error);

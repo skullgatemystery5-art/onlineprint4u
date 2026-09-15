@@ -203,7 +203,7 @@ export default function PrintPage() {
         return;
       }
       setAuthBusy(true);
-      const { error } = await sendPhoneOtp(cleaned, RECAPTCHA_ID);
+      const { error } = await sendPhoneOtp(cleaned);
       setAuthBusy(false);
       if (error) {
         toast.error(error);

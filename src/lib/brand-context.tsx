@@ -84,14 +84,14 @@ function setOgImage(url: string) {
   const favLink32 = document.createElement('link');
   favLink32.rel = 'icon';
   favLink32.type = 'image/png';
-  favLink32.sizes = '32x32';
+  favLink32.setAttribute('sizes', '32x32');
   favLink32.href = url;
   document.head.appendChild(favLink32);
 
   const favLink192 = document.createElement('link');
   favLink192.rel = 'icon';
   favLink192.type = 'image/png';
-  favLink192.sizes = '192x192';
+  favLink192.setAttribute('sizes', '192x192');
   favLink192.href = url;
   document.head.appendChild(favLink192);
 
