@@ -77,8 +77,6 @@ function getCloudFunctionUrl(endpoint: string): string {
   return `/${endpoint}`;
 }
 
-const RECAPTCHA_SITE_KEY = import.meta.env.VITE_RECAPTCHA_ENTERPRISE_SITE_KEY || '';
-
 let recaptchaContainerEl: HTMLDivElement | null = null;
 
 function getRecaptchaContainer(): HTMLDivElement {
@@ -189,9 +187,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Give the DOM a moment to settle before instantiating the verifier
         await new Promise((r) => setTimeout(r, 50));
 
-        // Create invisible RecaptchaVerifier with the Enterprise site key.
+        // Create invisible RecaptchaVerifier.
         // The verifier renders into a hidden container — no visible widget is shown to the user.
-        const verifierParams: Record<string, unknown> = {
+        // The reCAPTCHA site key is configured in the Firebase Console (Authentication > Sign-in method > Phone),
+        // NOT passed as a client-side parameter — passing 'sitekey' causes auth/argument-error.
+        const verifier = new RecaptchaVerifier(firebaseAuth, container, {
           size: 'invisible',
           callback: () => {
             // reCAPTCHA solved — signInWithPhoneNumber proceeds automatically
@@ -199,13 +199,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           'expired-callback': () => {
             clearRecaptcha();
           },
-        };
-
-        if (RECAPTCHA_SITE_KEY) {
-          verifierParams.sitekey = RECAPTCHA_SITE_KEY;
-        }
-
-        const verifier = new RecaptchaVerifier(firebaseAuth, container, verifierParams);
+        });
         recaptchaVerifierRef.current = verifier;
 
         await verifier.render();
