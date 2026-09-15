@@ -214,6 +214,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setTimeout(() => reject(new Error('RECAPTCHA_TIMEOUT')), 30000);
         });
 
+        const fullPhone = phone.startsWith('+') ? phone : '+91' + phone;
         const result = await Promise.race([
           signInWithPhoneNumber(firebaseAuth, fullPhone, verifier),
           timeoutPromise,
