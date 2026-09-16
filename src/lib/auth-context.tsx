@@ -77,24 +77,24 @@ function getCloudFunctionUrl(endpoint: string): string {
   return `/${endpoint}`;
 }
 
-let recaptchaContainerEl: HTMLDivElement | null = null;
+const RECAPTCHA_CONTAINER_ID = 'firebase-recaptcha-container';
 
-function getRecaptchaContainer(): HTMLDivElement {
-  if (!recaptchaContainerEl) {
-    recaptchaContainerEl = document.createElement('div');
-    recaptchaContainerEl.id = 'firebase-recaptcha-invisible';
-    recaptchaContainerEl.style.position = 'fixed';
-    recaptchaContainerEl.style.bottom = '0';
-    recaptchaContainerEl.style.left = '0';
-    recaptchaContainerEl.style.width = '0';
-    recaptchaContainerEl.style.height = '0';
-    recaptchaContainerEl.style.overflow = 'hidden';
-    recaptchaContainerEl.style.zIndex = '-1';
-    recaptchaContainerEl.style.visibility = 'hidden';
-    recaptchaContainerEl.setAttribute('aria-hidden', 'true');
-    document.body.appendChild(recaptchaContainerEl);
-  }
-  return recaptchaContainerEl;
+function createRecaptchaContainer(): string {
+  const existing = document.getElementById(RECAPTCHA_CONTAINER_ID);
+  if (existing) existing.remove();
+
+  const container = document.createElement('div');
+  container.id = RECAPTCHA_CONTAINER_ID;
+  container.style.position = 'fixed';
+  container.style.bottom = '0';
+  container.style.left = '0';
+  container.style.zIndex = '-1';
+  container.style.width = '304px';
+  container.style.height = '78px';
+  container.style.overflow = 'hidden';
+  container.setAttribute('aria-hidden', 'true');
+  document.body.appendChild(container);
+  return RECAPTCHA_CONTAINER_ID;
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -115,9 +115,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       recaptchaVerifierRef.current = null;
     }
-    if (recaptchaContainerEl) {
-      recaptchaContainerEl.innerHTML = '';
-    }
+    const existing = document.getElementById(RECAPTCHA_CONTAINER_ID);
+    if (existing) existing.remove();
   }, []);
 
   const fetchProfile = useCallback(async (uid: string) => {
@@ -181,17 +180,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         clearRecaptcha();
 
-        const container = getRecaptchaContainer();
-        container.innerHTML = '';
+        const containerId = createRecaptchaContainer();
 
         // Give the DOM a moment to settle before instantiating the verifier
         await new Promise((r) => setTimeout(r, 50));
 
-        // Create invisible RecaptchaVerifier.
-        // The verifier renders into a hidden container — no visible widget is shown to the user.
-        // The reCAPTCHA site key is configured in the Firebase Console (Authentication > Sign-in method > Phone),
-        // NOT passed as a client-side parameter — passing 'sitekey' causes auth/argument-error.
-        const verifier = new RecaptchaVerifier(firebaseAuth, container, {
+        // Create invisible RecaptchaVerifier using the container ID string.
+        // The reCAPTCHA site key is configured in the Firebase Console
+        // (Authentication > Sign-in method > Phone) — NOT passed client-side.
+        const verifier = new RecaptchaVerifier(firebaseAuth, containerId, {
           size: 'invisible',
           callback: () => {
             // reCAPTCHA solved — signInWithPhoneNumber proceeds automatically
@@ -248,6 +245,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         if (error.code === 'auth/argument-error') {
           return { error: 'Verification setup error. Please try again.', cooldownSec: 15 };
+        }
+        if (error.message && error.message.includes('Invalid site key')) {
+          return { error: 'reCAPTCHA is not properly configured. Please contact support.' };
+        }
+        if (error.message && error.message.includes('reCAPTCHA not loaded')) {
+          return { error: 'Verification failed to load. Please refresh the page and try again.' };
         }
         const msg = error.message ?? 'Failed to send OTP';
         return { error: msg };
