@@ -560,9 +560,6 @@ export default function CheckoutPage() {
                 </div>
               )}
 
-              {/* Hidden reCAPTCHA container for Firebase Phone Auth */}
-              {!user && <div id="checkout-recaptcha-container" className="min-h-[1px]" />}
-
               {user && (
                 <div className="flex items-center gap-3 rounded-lg bg-emerald-500/10 p-4">
                   <CheckCircle2 className="h-5 w-5 text-emerald-600" />

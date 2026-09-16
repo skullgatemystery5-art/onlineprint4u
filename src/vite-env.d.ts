@@ -9,7 +9,6 @@ interface ImportMetaEnv {
   readonly VITE_FIREBASE_APP_ID: string;
   readonly VITE_FIREBASE_FUNCTIONS_REGION: string;
   readonly VITE_RAZORPAY_KEY_ID: string;
-  readonly VITE_RECAPTCHA_ENTERPRISE_SITE_KEY: string;
 }
 
 interface ImportMeta {

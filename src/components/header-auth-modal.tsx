@@ -29,8 +29,6 @@ type AuthModalProps = {
 type AuthMethod = 'phone' | 'email';
 type Step = 'credentials' | 'otp';
 
-const RECAPTCHA_CONTAINER_ID = 'firebase-recaptcha-container';
-
 export function HeaderAuthModal({ open, onClose, mode }: AuthModalProps) {
   const { sendPhoneOtp, verifyPhoneOtp, sendEmailOtp, verifyEmailOtp, otpSending } = useAuth();
   const { secondsLeft, isCoolingDown, startCooldown } = useCountdown();
@@ -48,8 +46,6 @@ export function HeaderAuthModal({ open, onClose, mode }: AuthModalProps) {
       setStep('credentials');
       setOtp('');
       setLoading(false);
-      const container = document.getElementById(RECAPTCHA_CONTAINER_ID);
-      if (container) container.innerHTML = '';
     }
   }, [open]);
 
@@ -135,8 +131,6 @@ export function HeaderAuthModal({ open, onClose, mode }: AuthModalProps) {
     } else {
       if (!phoneValid) return;
       setLoading(true);
-      const container = document.getElementById(RECAPTCHA_CONTAINER_ID);
-      if (container) container.innerHTML = '';
       const { error, cooldownSec } = await sendPhoneOtp(phone);
       setLoading(false);
       if (error) {
@@ -351,8 +345,6 @@ export function HeaderAuthModal({ open, onClose, mode }: AuthModalProps) {
           </div>
         )}
 
-        {/* reCAPTCHA container — required by Firebase Phone Auth */}
-        <div id={RECAPTCHA_CONTAINER_ID} className="mt-4 flex min-h-[78px] items-center justify-center" />
       </div>
     </div>
   );

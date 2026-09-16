@@ -48,8 +48,6 @@ const steps = [
   { num: 5, icon: CreditCard, label: 'Checkout' },
 ];
 
-const RECAPTCHA_ID = 'print-recaptcha-container';
-
 export default function PrintPage() {
   const navigate = useNavigate();
   const { user, profile, sendPhoneOtp, verifyPhoneOtp, sendEmailOtp, verifyEmailOtp, otpSending } = useAuth();
@@ -652,7 +650,6 @@ export default function PrintPage() {
                     </div>
                   )}
 
-                  <div id={RECAPTCHA_ID} className="mt-2 min-h-[1px]" />
                 </div>
               )}
 

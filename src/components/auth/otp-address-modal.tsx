@@ -16,8 +16,6 @@ type OtpAddressModalProps = {
 
 type Step = 'details' | 'otp';
 
-const RECAPTCHA_CONTAINER_ID = 'otp-address-recaptcha-container';
-
 export function OtpAddressModal({ open, onClose, onSuccess, title, description }: OtpAddressModalProps) {
   const { sendPhoneOtp, verifyPhoneOtp, otpSending } = useAuth();
   const [step, setStep] = useState<Step>('details');
@@ -36,8 +34,6 @@ export function OtpAddressModal({ open, onClose, onSuccess, title, description }
       setStep('details');
       setOtp('');
       setLoading(false);
-      const container = document.getElementById(RECAPTCHA_CONTAINER_ID);
-      if (container) container.innerHTML = '';
     }
   }, [open]);
 
@@ -211,8 +207,6 @@ export function OtpAddressModal({ open, onClose, onSuccess, title, description }
           </div>
         )}
 
-        {/* reCAPTCHA container for Firebase Phone Auth — must be large enough for the widget to render */}
-        <div id={RECAPTCHA_CONTAINER_ID} className="mt-4 flex min-h-[78px] items-center justify-center" />
       </div>
     </div>
   );
