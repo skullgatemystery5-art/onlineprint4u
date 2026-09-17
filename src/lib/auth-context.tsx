@@ -16,7 +16,7 @@ import {
   sendPasswordResetEmail,
   signInWithCustomToken,
 } from 'firebase/auth';
-import { firebaseAuth } from './firebase';
+import { firebaseAuth, RECAPTCHA_ENTERPRISE_SITE_KEY } from './firebase';
 
 type AuthUser = {
   uid: string;
@@ -183,20 +183,50 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: 'Phone OTP is not configured. Please contact support.' };
       }
 
+      // Wait for the reCAPTCHA Enterprise script to be ready before proceeding.
+      // This ensures window.grecaptcha.enterprise is available so Firebase's SDK
+      // uses Enterprise mode and never falls back to the legacy v2 endpoint that
+      // was returning the old/deleted site key.
+      const waitForRecaptchaEnterprise = async (): Promise<boolean> => {
+        if (typeof window === 'undefined') return false;
+        const grecaptcha = window.grecaptcha;
+        if (grecaptcha && (grecaptcha as any).enterprise) return true;
+
+        // Wait up to 5 seconds for the script to load
+        for (let i = 0; i < 50; i++) {
+          await new Promise((r) => setTimeout(r, 100));
+          const g = window.grecaptcha;
+          if (g && (g as any).enterprise) return true;
+        }
+        return false;
+      };
+
       const attemptSend = async (): Promise<SendOtpResult> => {
         clearRecaptcha();
+
+        // Ensure the Enterprise script is loaded
+        const enterpriseReady = await waitForRecaptchaEnterprise();
+        if (!enterpriseReady) {
+          // Inject the Enterprise script as a last-resort fallback
+          const script = document.createElement('script');
+          script.src = `https://www.google.com/recaptcha/enterprise.js?render=${RECAPTCHA_ENTERPRISE_SITE_KEY}`;
+          script.async = true;
+          script.defer = true;
+          document.head.appendChild(script);
+          await new Promise((r) => setTimeout(r, 500));
+        }
 
         const containerId = createRecaptchaContainer();
 
         // Give the DOM a moment to settle before instantiating the verifier
         await new Promise((r) => setTimeout(r, 50));
 
-        // Create invisible RecaptchaVerifier using the container ID string.
-        // Firebase Auth v12 automatically uses reCAPTCHA Enterprise when enabled
-        // in the Firebase Console (Authentication > Sign-in method > Phone).
-        // The site key is fetched from the Firebase backend config — NOT passed
-        // client-side. This v2 verifier serves as a fallback when Enterprise
-        // is in audit mode or not yet enabled.
+        // Create invisible RecaptchaVerifier — fully invisible, no visible widget.
+        // Firebase Auth v12 checks window.grecaptcha.enterprise on the first call
+        // to signInWithPhoneNumber. If present, it uses Enterprise mode and fetches
+        // the site key from the Firebase Console config, bypassing the legacy v2
+        // recaptchaParams endpoint entirely. The v2 RecaptchaVerifier here is only
+        // used as a fallback container when Enterprise is in audit mode.
         const verifier = new RecaptchaVerifier(auth, containerId, {
           size: 'invisible',
           callback: () => {
@@ -216,14 +246,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       };
 
       try {
-        // First attempt
         return await attemptSend();
       } catch (err) {
         const error = err as { code?: string; message?: string };
         console.error('[Phone OTP] First attempt failed:', error.code ?? 'unknown', error.message ?? err);
         clearRecaptcha();
 
-        // Retry once on transient reCAPTCHA errors
+        // Retry up to 2 times on transient reCAPTCHA errors
         const transientErrors = [
           'auth/captcha-check-failed',
           'auth/invalid-recaptcha-token',
@@ -234,15 +263,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           (error.message && (error.message.includes('Invalid site key') || error.message.includes('reCAPTCHA not loaded')));
 
         if (isTransient) {
-          try {
-            // Wait briefly before retry
-            await new Promise((r) => setTimeout(r, 500));
-            return await attemptSend();
-          } catch (retryErr) {
-            const retryError = retryErr as { code?: string; message?: string };
-            console.error('[Phone OTP] Retry failed:', retryError.code ?? 'unknown', retryError.message ?? retryErr);
-            clearRecaptcha();
-            return { error: 'Verification failed after retry. Please refresh the page and try again.', cooldownSec: 15 };
+          for (let attempt = 0; attempt < 2; attempt++) {
+            try {
+              await new Promise((r) => setTimeout(r, 500));
+              return await attemptSend();
+            } catch (retryErr) {
+              const retryError = retryErr as { code?: string; message?: string };
+              console.error(`[Phone OTP] Retry ${attempt + 1} failed:`, retryError.code ?? 'unknown', retryError.message ?? retryErr);
+              clearRecaptcha();
+              if (attempt === 1) {
+                return { error: 'Verification failed after retries. Please refresh the page and try again.', cooldownSec: 15 };
+              }
+            }
           }
         }
 
