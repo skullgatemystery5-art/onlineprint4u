@@ -177,7 +177,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const fullPhone = `+91${digits.slice(-10)}`;
 
       setOtpSending(true);
-      try {
+
+      const auth = firebaseAuth;
+      if (!auth) {
+        return { error: 'Phone OTP is not configured. Please contact support.' };
+      }
+
+      const attemptSend = async (): Promise<SendOtpResult> => {
         clearRecaptcha();
 
         const containerId = createRecaptchaContainer();
@@ -186,9 +192,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await new Promise((r) => setTimeout(r, 50));
 
         // Create invisible RecaptchaVerifier using the container ID string.
-        // The reCAPTCHA site key is configured in the Firebase Console
-        // (Authentication > Sign-in method > Phone) — NOT passed client-side.
-        const verifier = new RecaptchaVerifier(firebaseAuth, containerId, {
+        // Firebase Auth v12 automatically uses reCAPTCHA Enterprise when enabled
+        // in the Firebase Console (Authentication > Sign-in method > Phone).
+        // The site key is fetched from the Firebase backend config — NOT passed
+        // client-side. This v2 verifier serves as a fallback when Enterprise
+        // is in audit mode or not yet enabled.
+        const verifier = new RecaptchaVerifier(auth, containerId, {
           size: 'invisible',
           callback: () => {
             // reCAPTCHA solved — signInWithPhoneNumber proceeds automatically
@@ -201,27 +210,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         await verifier.render();
 
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error('RECAPTCHA_TIMEOUT')), 30000);
-        });
-
-        const result = await Promise.race([
-          signInWithPhoneNumber(firebaseAuth, fullPhone, verifier),
-          timeoutPromise,
-        ]);
+        const result = await signInWithPhoneNumber(auth, fullPhone, verifier);
         setConfirmationResult(result);
         return { error: null };
+      };
+
+      try {
+        // First attempt
+        return await attemptSend();
       } catch (err) {
         const error = err as { code?: string; message?: string };
-        console.error('[Phone OTP] Failed to send OTP:', error.code ?? 'unknown', error.message ?? err);
+        console.error('[Phone OTP] First attempt failed:', error.code ?? 'unknown', error.message ?? err);
         clearRecaptcha();
 
-        if (error.message === 'RECAPTCHA_TIMEOUT') {
-          return {
-            error: 'Verification timed out. Please try again.',
-            cooldownSec: 30,
-          };
+        // Retry once on transient reCAPTCHA errors
+        const transientErrors = [
+          'auth/captcha-check-failed',
+          'auth/invalid-recaptcha-token',
+          'auth/argument-error',
+        ];
+        const isTransient =
+          (error.code && transientErrors.includes(error.code)) ||
+          (error.message && (error.message.includes('Invalid site key') || error.message.includes('reCAPTCHA not loaded')));
+
+        if (isTransient) {
+          try {
+            // Wait briefly before retry
+            await new Promise((r) => setTimeout(r, 500));
+            return await attemptSend();
+          } catch (retryErr) {
+            const retryError = retryErr as { code?: string; message?: string };
+            console.error('[Phone OTP] Retry failed:', retryError.code ?? 'unknown', retryError.message ?? retryErr);
+            clearRecaptcha();
+            return { error: 'Verification failed after retry. Please refresh the page and try again.', cooldownSec: 15 };
+          }
         }
+
+        // Non-transient errors — return specific messages
         if (error.code === 'auth/too-many-requests') {
           return {
             error: 'Too many OTP requests. Please wait before requesting another code.',
@@ -231,23 +256,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (error.code === 'auth/invalid-phone-number') {
           return { error: 'Invalid phone number. Please check and try again.' };
         }
-        if (error.code === 'auth/captcha-check-failed') {
-          return { error: 'Verification check failed. Please try again.', cooldownSec: 15 };
-        }
         if (error.code === 'auth/operation-not-allowed') {
           return { error: 'Phone login is not enabled. Please contact support.' };
         }
         if (error.code === 'auth/quota-exceeded') {
           return { error: 'SMS quota exceeded. Please try again later or use email login.' };
         }
-        if (error.code === 'auth/invalid-recaptcha-token' || error.code === 'auth/invalid-verification-code') {
-          return { error: 'Verification failed. Please try again.', cooldownSec: 15 };
-        }
-        if (error.code === 'auth/argument-error') {
-          return { error: 'Verification setup error. Please try again.', cooldownSec: 15 };
-        }
         if (error.message && error.message.includes('Invalid site key')) {
-          return { error: 'reCAPTCHA is not properly configured. Please contact support.' };
+          return { error: 'reCAPTCHA site key mismatch. Please ensure the new Enterprise key is configured in the Firebase Console.' };
         }
         if (error.message && error.message.includes('reCAPTCHA not loaded')) {
           return { error: 'Verification failed to load. Please refresh the page and try again.' };
