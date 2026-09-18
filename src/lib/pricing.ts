@@ -1,5 +1,12 @@
 import type { OrderItem, PricingRate, ShippingRate, Coupon, PaperGsm } from './database';
 
+export const PAPER_SIZE_OPTIONS: { value: string; label: string }[] = [
+  { value: 'A4', label: 'A4 (210 × 297 mm)' },
+  { value: 'A5', label: 'A5 (148 × 210 mm)' },
+  { value: 'Legal', label: 'Legal (216 × 356 mm)' },
+  { value: 'Letter', label: 'Letter (216 × 279 mm)' },
+];
+
 export const PAPER_GSM_OPTIONS: { value: PaperGsm; label: string }[] = [
   { value: '70', label: '70 GSM Economy' },
   { value: '75', label: '75 GSM Standard' },
@@ -29,11 +36,11 @@ export const LAMINATION_RATES: Record<string, number> = {
 
 // Hardcoded print-per-page rates keyed by `${gsm}_${printType}_${side}`
 export const PRINT_RATES: Record<string, number> = {
-  '70_bw_single': 0.90,
+  '70_bw_single': 1.00,
   '70_bw_double': 0.50,
   '70_color_single': 5.00,
   '70_color_double': 4.00,
-  '75_bw_single': 1.00,
+  '75_bw_single': 1.20,
   '75_bw_double': 0.60,
   '75_color_single': 6.00,
   '75_color_double': 5.00,
@@ -184,14 +191,14 @@ export function formatINR(amount: number): string {
 export const RATE_CARD = [
   {
     gsm: '70 GSM Economy',
-    bwSingle: 0.90,
-    bwDouble: 0.50,
+    bwSingle: 1.0,
+    bwDouble: 0.5,
     colorSingle: 5.0,
     colorDouble: 4.0,
   },
   {
     gsm: '75 GSM Standard',
-    bwSingle: 1.0,
+    bwSingle: 1.2,
     bwDouble: 0.6,
     colorSingle: 6.0,
     colorDouble: 5.0,

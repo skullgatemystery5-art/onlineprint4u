@@ -1,35 +1,42 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { Calculator, X, Minus, Plus, LogIn } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth-context';
-import { formatINR, PAPER_GSM_OPTIONS, BINDING_OPTIONS } from '@/lib/pricing';
-import { getActivePricingRates, getActiveShippingRates, isFirebaseConfigured, type PricingRate, type ShippingRate } from '@/lib/database';
+import {
+  formatINR,
+  PAPER_GSM_OPTIONS,
+  PAPER_SIZE_OPTIONS,
+  BINDING_OPTIONS,
+  LAMINATION_RATES,
+  PREMIUM_PHOTO_RATE,
+  getPrintRateLocal,
+  getBindingPriceLocal,
+  RATE_CARD,
+  estimateWeight,
+} from '@/lib/pricing';
+import type { PaperGsm, OrderItem } from '@/lib/database';
+import {
+  isValidPincode,
+  isLocalPincode,
+  getShippingMethods,
+  formatWeight,
+  type CourierType,
+} from '@/lib/shipping';
 import { siteConfig } from '@/lib/site-config';
 import { isValidWhatsAppPhone } from '@/lib/whatsapp';
 
-function getRatePrice(rates: PricingRate[], category: string, key: string): number {
-  return rates.find((r) => r.category === category && r.key === key)?.price ?? 0;
-}
+const selectClass =
+  'rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#2563EB]/40 w-full';
 
-function getPrintRate(rates: PricingRate[], gsm: string, printType: 'bw' | 'color', side: 'single' | 'double'): number {
-  return getRatePrice(rates, 'print_per_page', `${gsm}_${printType}_${side}`);
-}
-
-function getBindingPrice(rates: PricingRate[], binding: string): number {
-  return getRatePrice(rates, 'binding', binding);
-}
-
-function getDeliveryCharge(shippingRates: ShippingRate[], courierType: string): number {
-  const rate = shippingRates.find((s) => s.courier_type === courierType);
-  return rate?.base_rate ?? 69;
-}
-
-interface Result {
+interface CalcResult {
   perPageRate: number;
   printingCost: number;
   bindingCost: number;
+  laminationCost: number;
   photoCost: number;
   deliveryCharge: number;
+  courierType: CourierType;
+  weightGrams: number;
   grandTotal: number;
 }
 
@@ -40,23 +47,33 @@ export function FloatingWidgets() {
 
   const [pages, setPages] = useState('');
   const [pincode, setPincode] = useState('');
+  const [pageSize, setPageSize] = useState('A4');
   const [printType, setPrintType] = useState<'bw' | 'color'>('bw');
-  const [gsm, setGsm] = useState<string>('70');
-  const [binding, setBinding] = useState<string>('none');
+  const [gsm, setGsm] = useState<PaperGsm>('75');
+  const [binding, setBinding] = useState<OrderItem['binding']>('none');
   const [copies, setCopies] = useState(1);
-  const [doubleSide, setDoubleSide] = useState(false);
+  const [side, setSide] = useState<'single' | 'double'>('double');
+  const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('portrait');
+  const [lamination, setLamination] = useState<'none' | 'transparent'>('none');
   const [premiumPhoto, setPremiumPhoto] = useState(false);
-  const [result, setResult] = useState<Result | null>(null);
+  const [result, setResult] = useState<CalcResult | null>(null);
   const [error, setError] = useState('');
 
-  const [rates, setRates] = useState<PricingRate[]>([]);
-  const [shippingRates, setShippingRates] = useState<ShippingRate[]>([]);
+  const weightGrams = useMemo(() => {
+    const totalPages = parseInt(pages, 10) || 0;
+    if (totalPages < 1) return 0;
+    return Math.round(estimateWeight(totalPages, copies, gsm) * 1000);
+  }, [pages, copies, gsm]);
 
-  useEffect(() => {
-    if (!isFirebaseConfigured) return;
-    getActivePricingRates().then(setRates).catch(() => {});
-    getActiveShippingRates().then(setShippingRates).catch(() => {});
-  }, []);
+  const availableCouriers = useMemo(() => {
+    if (!isValidPincode(pincode)) return [];
+    return getShippingMethods(pincode, weightGrams, 0).filter((m) => m.type !== 'pickup' && m.available);
+  }, [pincode, weightGrams]);
+
+  const defaultCourierType: CourierType | null = useMemo(() => {
+    if (availableCouriers.length === 0) return null;
+    return availableCouriers[0].type;
+  }, [availableCouriers]);
 
   const calculate = useCallback(() => {
     const totalPages = parseInt(pages, 10);
@@ -66,26 +83,47 @@ export function FloatingWidgets() {
     }
     setError('');
 
-    const side: 'single' | 'double' = doubleSide ? 'double' : 'single';
-    const printRate = getPrintRate(rates, gsm, printType, side);
-    const bindingPrice = getBindingPrice(rates, binding);
-    const photoRate = getRatePrice(rates, 'addons', 'premium_photo');
+    const printRate = getPrintRateLocal(gsm, printType, side);
+    const bindingPrice = getBindingPriceLocal(binding);
+    const laminationRate = LAMINATION_RATES[lamination] ?? 0;
 
     const printingCost = Math.round(totalPages * copies * printRate * 100) / 100;
     const bindingCost = Math.round(bindingPrice * copies * 100) / 100;
-    const photoCost = premiumPhoto ? Math.round(totalPages * copies * photoRate * 100) / 100 : 0;
+    const laminationCost = Math.round(laminationRate * totalPages * copies * 100) / 100;
+    const photoCost = premiumPhoto ? Math.round(PREMIUM_PHOTO_RATE * totalPages * copies * 100) / 100 : 0;
 
-    const courierType = 'local';
-    const deliveryCharge = getDeliveryCharge(shippingRates, courierType);
+    const subtotal = printingCost + bindingCost + laminationCost + photoCost;
 
-    const subtotal = printingCost + bindingCost + photoCost + deliveryCharge;
-    const grandTotal = Math.round(subtotal * 100) / 100;
+    let deliveryCharge = 0;
+    let courierType: CourierType = 'standard';
+    if (isValidPincode(pincode) && defaultCourierType) {
+      const methods = getShippingMethods(pincode, weightGrams, subtotal).filter(
+        (m) => m.type !== 'pickup' && m.available
+      );
+      const chosen = methods.find((m) => m.type === defaultCourierType) ?? methods[0];
+      if (chosen) {
+        deliveryCharge = chosen.cost;
+        courierType = chosen.type;
+      }
+    }
 
-    setResult({ perPageRate: printRate, printingCost, bindingCost, photoCost, deliveryCharge, grandTotal });
-  }, [pages, pincode, printType, gsm, binding, copies, doubleSide, premiumPhoto, rates, shippingRates]);
+    const grandTotal = Math.round((subtotal + deliveryCharge) * 100) / 100;
 
-  const bwStart = rates.length > 0 ? getPrintRate(rates, '70', 'bw', 'single') : 0.90;
-  const colorStart = rates.length > 0 ? getPrintRate(rates, '70', 'color', 'double') : 4.0;
+    setResult({
+      perPageRate: printRate,
+      printingCost,
+      bindingCost,
+      laminationCost,
+      photoCost,
+      deliveryCharge,
+      courierType,
+      weightGrams,
+      grandTotal,
+    });
+  }, [pages, pincode, printType, gsm, binding, copies, side, orientation, lamination, premiumPhoto, weightGrams, defaultCourierType]);
+
+  const bwStart = RATE_CARD[0].bwSingle;
+  const colorStart = RATE_CARD[0].colorDouble;
 
   return (
     <>
@@ -161,121 +199,166 @@ export function FloatingWidgets() {
               </button>
             </div>
 
-            <div className="p-6 max-h-[80vh] overflow-y-auto">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-sm font-medium text-gray-700">Total Pages</label>
-                  <input
-                    type="number"
-                    min={1}
-                    value={pages}
-                    onChange={(e) => { setPages(e.target.value); setResult(null); }}
-                    placeholder="e.g. 100"
-                    className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#2563EB]/40"
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-sm font-medium text-gray-700">Delivery Pincode</label>
-                  <input
-                    type="text"
-                    maxLength={6}
-                    value={pincode}
-                    onChange={(e) => { setPincode(e.target.value.replace(/\D/, '')); setResult(null); }}
-                    placeholder="e.g. 800013"
-                    className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#2563EB]/40"
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-sm font-medium text-gray-700">Print Type</label>
-                  <div className="flex gap-2">
-                    {(['bw', 'color'] as const).map((t) => (
-                      <button
-                        key={t}
-                        onClick={() => { setPrintType(t); setResult(null); }}
-                        className={`flex-1 rounded-lg border py-2 text-sm font-medium transition-all ${
-                          printType === t
-                            ? 'border-[#2563EB] bg-[#2563EB] text-white'
-                            : 'border-gray-300 bg-white text-gray-700 hover:border-[#2563EB]/50'
-                        }`}
-                      >
-                        {t === 'bw' ? 'B&W' : 'Color'}
-                      </button>
-                    ))}
-                  </div>
-                  <p className="text-xs text-gray-400">
-                    {printType === 'bw'
-                      ? `Starts at ${formatINR(bwStart)}/page`
-                      : `Starts at ${formatINR(colorStart)}/page`}
+            <div className="p-6 max-h-[80vh] overflow-y-auto space-y-4">
+              {/* Total Pages — top */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium text-gray-700">Total Pages</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={pages}
+                  onChange={(e) => { setPages(e.target.value); setResult(null); }}
+                  placeholder="e.g. 100"
+                  className={selectClass}
+                />
+              </div>
+
+              {/* Delivery Pincode */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium text-gray-700">Delivery Pincode</label>
+                <input
+                  type="text"
+                  maxLength={6}
+                  value={pincode}
+                  onChange={(e) => { setPincode(e.target.value.replace(/\D/g, '').slice(0, 6)); setResult(null); }}
+                  placeholder="e.g. 800013"
+                  className={selectClass}
+                />
+                {pincode.length === 6 && isValidPincode(pincode) && (
+                  <p className="text-xs text-emerald-600 font-medium">
+                    {isLocalPincode(pincode)
+                      ? 'Local Patna area — Same-day delivery available'
+                      : 'Outstation — National courier available'}
                   </p>
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-sm font-medium text-gray-700">Paper Type</label>
-                  <select
-                    value={gsm}
-                    onChange={(e) => { setGsm(e.target.value); setResult(null); }}
-                    className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#2563EB]/40"
-                  >
-                    {PAPER_GSM_OPTIONS.map((g) => (
-                      <option key={g.value} value={g.value}>{g.label}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-sm font-medium text-gray-700">Binding Type</label>
-                  <select
-                    value={binding}
-                    onChange={(e) => { setBinding(e.target.value); setResult(null); }}
-                    className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#2563EB]/40"
-                  >
-                    {BINDING_OPTIONS.map((b) => (
-                      <option key={b.key} value={b.key}>
-                        {b.label} {b.key !== 'none' && `(${formatINR(getBindingPrice(rates, b.key))})`}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-sm font-medium text-gray-700">Copies</label>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => { setCopies((c) => Math.max(1, c - 1)); setResult(null); }}
-                      className="flex h-9 w-9 items-center justify-center rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors"
-                    >
-                      <Minus className="h-4 w-4" />
-                    </button>
-                    <span className="w-10 text-center text-sm font-semibold">{copies}</span>
-                    <button
-                      onClick={() => { setCopies((c) => c + 1); setResult(null); }}
-                      className="flex h-9 w-9 items-center justify-center rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors"
-                    >
-                      <Plus className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
+                )}
+                {pincode.length === 6 && !isValidPincode(pincode) && (
+                  <p className="text-xs text-red-500 font-medium">Please enter a valid 6-digit pincode</p>
+                )}
               </div>
 
-              <div className="mt-4 flex items-center justify-between rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
-                <div>
-                  <p className="text-sm font-medium text-gray-700">Double-Side Printing</p>
-                  <p className="text-xs text-gray-400">Prints on both sides (duplex)</p>
-                </div>
-                <button
-                  role="switch"
-                  aria-checked={doubleSide}
-                  onClick={() => { setDoubleSide((d) => !d); setResult(null); }}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 focus:outline-none ${
-                    doubleSide ? 'bg-[#2563EB]' : 'bg-gray-300'
-                  }`}
+              {/* Print Type — Dropdown */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium text-gray-700">Color Mode</label>
+                <select
+                  value={printType}
+                  onChange={(e) => { setPrintType(e.target.value as 'bw' | 'color'); setResult(null); }}
+                  className={selectClass}
                 >
-                  <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform duration-200 ${
-                      doubleSide ? 'translate-x-6' : 'translate-x-1'
-                    }`}
-                  />
-                </button>
+                  <option value="bw">Black &amp; White (B&amp;W)</option>
+                  <option value="color">Color</option>
+                </select>
+                <p className="text-xs text-gray-400">
+                  {printType === 'bw'
+                    ? `Starts at ${formatINR(bwStart)}/page`
+                    : `Starts at ${formatINR(colorStart)}/page`}
+                </p>
               </div>
 
-              <div className="mt-4 flex items-center justify-between rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+              {/* Page Size — Dropdown */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium text-gray-700">Page Size</label>
+                <select
+                  value={pageSize}
+                  onChange={(e) => { setPageSize(e.target.value); setResult(null); }}
+                  className={selectClass}
+                >
+                  {PAPER_SIZE_OPTIONS.map((s) => (
+                    <option key={s.value} value={s.value}>{s.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Print Side — Dropdown */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium text-gray-700">Print Side</label>
+                <select
+                  value={side}
+                  onChange={(e) => { setSide(e.target.value as 'single' | 'double'); setResult(null); }}
+                  className={selectClass}
+                >
+                  <option value="double">Double Side (Back-to-Back / Both Sided)</option>
+                  <option value="single">Single Side (One Sided)</option>
+                </select>
+              </div>
+
+              {/* Print Orientation — Dropdown */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium text-gray-700">Print Orientation</label>
+                <select
+                  value={orientation}
+                  onChange={(e) => { setOrientation(e.target.value as 'portrait' | 'landscape'); setResult(null); }}
+                  className={selectClass}
+                >
+                  <option value="portrait">Portrait (Vertical)</option>
+                  <option value="landscape">Landscape (Horizontal)</option>
+                </select>
+              </div>
+
+              {/* Paper GSM — Dropdown */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium text-gray-700">Paper Type (GSM)</label>
+                <select
+                  value={gsm}
+                  onChange={(e) => { setGsm(e.target.value as PaperGsm); setResult(null); }}
+                  className={selectClass}
+                >
+                  {PAPER_GSM_OPTIONS.map((g) => (
+                    <option key={g.value} value={g.value}>{g.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Copies */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium text-gray-700">Copies</label>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => { setCopies((c) => Math.max(1, c - 1)); setResult(null); }}
+                    className="flex h-9 w-9 items-center justify-center rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors"
+                  >
+                    <Minus className="h-4 w-4" />
+                  </button>
+                  <span className="w-10 text-center text-sm font-semibold">{copies}</span>
+                  <button
+                    onClick={() => { setCopies((c) => c + 1); setResult(null); }}
+                    className="flex h-9 w-9 items-center justify-center rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Binding — Dropdown */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium text-gray-700">Binding / Staple Type</label>
+                <select
+                  value={binding}
+                  onChange={(e) => { setBinding(e.target.value as OrderItem['binding']); setResult(null); }}
+                  className={selectClass}
+                >
+                  {BINDING_OPTIONS.map((b) => (
+                    <option key={b.key} value={b.key}>
+                      {b.label} {b.key !== 'none' ? `(${b.priceLabel})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Lamination — Dropdown */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium text-gray-700">Lamination</label>
+                <select
+                  value={lamination}
+                  onChange={(e) => { setLamination(e.target.value as 'none' | 'transparent'); setResult(null); }}
+                  className={selectClass}
+                >
+                  <option value="none">No Lamination</option>
+                  <option value="transparent">Transparent Cover (₹5/page)</option>
+                </select>
+              </div>
+
+              {/* Premium Photo toggle */}
+              <div className="flex items-center justify-between rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
                 <div>
                   <p className="text-sm font-medium text-gray-700">Premium Photo Prints</p>
                   <p className="text-xs text-gray-400">₹25/page for photo-quality printing</p>
@@ -296,11 +379,23 @@ export function FloatingWidgets() {
                 </button>
               </div>
 
-              {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
+              {/* Weight preview */}
+              {weightGrams > 0 && (
+                <div className="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500">
+                  <span>Estimated Weight: <strong className="text-gray-700">{formatWeight(weightGrams)}</strong></span>
+                  {availableCouriers.length > 0 && (
+                    <span className="ml-auto">
+                      Courier: <strong className="text-gray-700">{availableCouriers[0].label}</strong> — {availableCouriers[0].cost === 0 ? 'Free' : formatINR(availableCouriers[0].cost)}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {error && <p className="text-sm text-red-500">{error}</p>}
 
               <button
                 onClick={calculate}
-                className="mt-4 w-full rounded-xl bg-[#2563EB] py-3 text-sm font-semibold text-white hover:bg-[#1d4ed8] active:scale-[0.98] transition-all duration-150 flex items-center justify-center gap-2"
+                className="w-full rounded-xl bg-[#2563EB] py-3 text-sm font-semibold text-white hover:bg-[#1d4ed8] active:scale-[0.98] transition-all duration-150 flex items-center justify-center gap-2"
               >
                 <Calculator className="h-4 w-4" />
                 Calculate Price
@@ -308,7 +403,7 @@ export function FloatingWidgets() {
 
               {result && (
                 <div
-                  className="mt-5 rounded-xl border border-[#2563EB]/20 bg-blue-50 p-4 space-y-2"
+                  className="rounded-xl border border-[#2563EB]/20 bg-blue-50 p-4 space-y-2"
                   style={{ animation: 'modal-scale-in 0.18s ease-out' }}
                 >
                   <p className="text-sm font-semibold text-[#2563EB] mb-3">Cost Breakdown</p>
@@ -319,12 +414,13 @@ export function FloatingWidgets() {
                   {([
                     ['Printing Cost', result.printingCost],
                     ['Binding Cost', result.bindingCost],
+                    ...(result.laminationCost > 0 ? [['Lamination Cost', result.laminationCost] as [string, number]] : []),
                     ...(result.photoCost > 0 ? [['Photo Print Cost', result.photoCost] as [string, number]] : []),
                     ['Delivery Charges', result.deliveryCharge],
                   ] as [string, number][]).map(([label, val]) => (
                     <div key={label} className="flex justify-between text-sm text-gray-700">
                       <span>{label}</span>
-                      <span className="font-medium">{formatINR(val)}</span>
+                      <span className="font-medium">{val === 0 && label === 'Delivery Charges' ? 'Free' : formatINR(val)}</span>
                     </div>
                   ))}
                   <div className="border-t border-[#2563EB]/20 pt-2 flex justify-between text-base font-bold text-[#2563EB]">

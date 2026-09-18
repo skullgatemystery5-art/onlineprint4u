@@ -18,6 +18,7 @@ import {
   MessageCircle,
   Weight,
   Lock,
+  Smartphone,
 } from 'lucide-react';
 import { Header } from '@/components/header';
 import { Footer } from '@/components/footer';

@@ -27,6 +27,7 @@ import {
   calculateItemPriceLocal,
   formatINR,
   PAPER_GSM_OPTIONS,
+  PAPER_SIZE_OPTIONS,
   BINDING_OPTIONS,
   RATE_CARD,
   getPrintRateLocal,
@@ -72,7 +73,8 @@ export default function PrintPage() {
 
   const [options, setOptions] = useState({
     printType: 'bw' as 'bw' | 'color',
-    side: 'single' as 'single' | 'double',
+    pageSize: 'A4',
+    side: 'double' as 'single' | 'double',
     orientation: 'portrait' as 'portrait' | 'landscape',
     paperGsm: '75' as PaperGsm,
     binding: 'none' as OrderItem['binding'],
@@ -268,72 +270,61 @@ export default function PrintPage() {
                 </p>
 
                 <div className="space-y-6">
-                  {/* Print Type */}
-                  <div>
-                    <Label className="mb-2 block">Print Type</Label>
-                    <div className="grid grid-cols-2 gap-3">
-                      {[
-                        { key: 'bw', label: 'Black & White', desc: `Starts at ${formatINR(RATE_CARD[0].bwSingle)}/page` },
-                        { key: 'color', label: 'Color', desc: `Starts at ${formatINR(RATE_CARD[0].colorDouble)}/page` },
-                      ].map((opt) => (
-                        <button
-                          key={opt.key}
-                          onClick={() => setOptions({ ...options, printType: opt.key as 'bw' | 'color' })}
-                          className={cn(
-                            'rounded-xl border-2 p-4 text-left transition-all',
-                            options.printType === opt.key ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'
-                          )}
-                        >
-                          <p className="font-display text-sm font-semibold">{opt.label}</p>
-                          <p className="text-xs text-muted-foreground">{opt.desc}</p>
-                        </button>
-                      ))}
+                  {/* Print Type + Page Size */}
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <Label className="mb-2 block">Print Type</Label>
+                      <select
+                        value={options.printType}
+                        onChange={(e) => setOptions({ ...options, printType: e.target.value as 'bw' | 'color' })}
+                        className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                      >
+                        <option value="bw">Black & White (B&W)</option>
+                        <option value="color">Color</option>
+                      </select>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {options.printType === 'bw'
+                          ? `Starts at ${formatINR(RATE_CARD[0].bwSingle)}/page`
+                          : `Starts at ${formatINR(RATE_CARD[0].colorDouble)}/page`}
+                      </p>
+                    </div>
+                    <div>
+                      <Label className="mb-2 block">Page Size</Label>
+                      <select
+                        value={options.pageSize}
+                        onChange={(e) => setOptions({ ...options, pageSize: e.target.value })}
+                        className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                      >
+                        {PAPER_SIZE_OPTIONS.map((s) => (
+                          <option key={s.value} value={s.value}>{s.label}</option>
+                        ))}
+                      </select>
                     </div>
                   </div>
 
-                  {/* Side */}
-                  <div>
-                    <Label className="mb-2 block">Print Side</Label>
-                    <div className="grid grid-cols-2 gap-3">
-                      {[
-                        { key: 'single', label: 'Single Side' },
-                        { key: 'double', label: 'Double Side', desc: 'Save 50%' },
-                      ].map((opt) => (
-                        <button
-                          key={opt.key}
-                          onClick={() => setOptions({ ...options, side: opt.key as 'single' | 'double' })}
-                          className={cn(
-                            'rounded-xl border-2 p-4 text-left transition-all',
-                            options.side === opt.key ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'
-                          )}
-                        >
-                          <p className="font-display text-sm font-semibold">{opt.label}</p>
-                          {opt.desc && <p className="text-xs text-emerald-600">{opt.desc}</p>}
-                        </button>
-                      ))}
+                  {/* Side + Orientation */}
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <Label className="mb-2 block">Print Side</Label>
+                      <select
+                        value={options.side}
+                        onChange={(e) => setOptions({ ...options, side: e.target.value as 'single' | 'double' })}
+                        className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                      >
+                        <option value="double">Double Side (Back-to-Back / Both Sided)</option>
+                        <option value="single">Single Side (One Sided)</option>
+                      </select>
                     </div>
-                  </div>
-
-                  {/* Print Orientation */}
-                  <div>
-                    <Label className="mb-2 block">Print Orientation</Label>
-                    <div className="grid grid-cols-2 gap-3">
-                      {[
-                        { key: 'portrait', label: 'Portrait', desc: 'Vertical (default)' },
-                        { key: 'landscape', label: 'Landscape', desc: 'Horizontal' },
-                      ].map((opt) => (
-                        <button
-                          key={opt.key}
-                          onClick={() => setOptions({ ...options, orientation: opt.key as 'portrait' | 'landscape' })}
-                          className={cn(
-                            'rounded-xl border-2 p-4 text-left transition-all',
-                            options.orientation === opt.key ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'
-                          )}
-                        >
-                          <p className="font-display text-sm font-semibold">{opt.label}</p>
-                          <p className="text-xs text-muted-foreground">{opt.desc}</p>
-                        </button>
-                      ))}
+                    <div>
+                      <Label className="mb-2 block">Print Orientation</Label>
+                      <select
+                        value={options.orientation}
+                        onChange={(e) => setOptions({ ...options, orientation: e.target.value as 'portrait' | 'landscape' })}
+                        className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                      >
+                        <option value="portrait">Portrait (Vertical)</option>
+                        <option value="landscape">Landscape (Horizontal)</option>
+                      </select>
                     </div>
                   </div>
 
@@ -352,87 +343,59 @@ export default function PrintPage() {
                       />
                     </div>
                     <div>
-                      <Label className="mb-2 block">Paper GSM</Label>
-                      <div className="flex flex-wrap gap-2">
+                      <Label className="mb-2 block">Paper Type (GSM)</Label>
+                      <select
+                        value={options.paperGsm}
+                        onChange={(e) => setOptions({ ...options, paperGsm: e.target.value as PaperGsm })}
+                        className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                      >
                         {PAPER_GSM_OPTIONS.map((opt) => (
-                          <button
-                            key={opt.value}
-                            onClick={() => setOptions({ ...options, paperGsm: opt.value })}
-                            className={cn(
-                              'rounded-lg border-2 px-3 py-2 text-sm font-medium transition-all',
-                              options.paperGsm === opt.value ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'
-                            )}
-                          >
-                            {opt.label}
-                          </button>
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
                         ))}
-                      </div>
+                      </select>
                     </div>
                   </div>
 
-                  {/* Binding */}
-                  <div>
-                    <Label className="mb-2 block">Binding</Label>
-                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                      {BINDING_OPTIONS.map((opt) => (
-                        <button
-                          key={opt.key}
-                          onClick={() => setOptions({ ...options, binding: opt.key })}
-                          className={cn(
-                            'rounded-xl border-2 p-3 text-center transition-all',
-                            options.binding === opt.key ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'
-                          )}
-                        >
-                          <p className="font-display text-sm font-semibold">{opt.label}</p>
-                          <p className="text-xs text-muted-foreground">{opt.priceLabel}</p>
-                        </button>
-                      ))}
+                  {/* Binding + Lamination */}
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <Label className="mb-2 block">Binding / Staple Type</Label>
+                      <select
+                        value={options.binding}
+                        onChange={(e) => setOptions({ ...options, binding: e.target.value as OrderItem['binding'] })}
+                        className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                      >
+                        {BINDING_OPTIONS.map((opt) => (
+                          <option key={opt.key} value={opt.key}>
+                            {opt.label} {opt.key !== 'none' ? `(${opt.priceLabel})` : ''}
+                          </option>
+                        ))}
+                      </select>
                     </div>
-                  </div>
-
-                  {/* Lamination */}
-                  <div>
-                    <Label className="mb-2 block">Lamination</Label>
-                    <div className="grid grid-cols-2 gap-3">
-                      {[
-                        { key: 'none', label: 'No Lamination' },
-                        { key: 'transparent', label: 'Transparent Cover' },
-                      ].map((opt) => (
-                        <button
-                          key={opt.key}
-                          onClick={() => setOptions({ ...options, lamination: opt.key as 'none' | 'transparent' })}
-                          className={cn(
-                            'rounded-xl border-2 p-4 text-left transition-all',
-                            options.lamination === opt.key ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'
-                          )}
-                        >
-                          <p className="font-display text-sm font-semibold">{opt.label}</p>
-                        </button>
-                      ))}
+                    <div>
+                      <Label className="mb-2 block">Lamination</Label>
+                      <select
+                        value={options.lamination}
+                        onChange={(e) => setOptions({ ...options, lamination: e.target.value as 'none' | 'transparent' })}
+                        className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                      >
+                        <option value="none">No Lamination</option>
+                        <option value="transparent">Transparent Cover (₹5/page)</option>
+                      </select>
                     </div>
                   </div>
 
                   {/* Premium Photo */}
                   <div>
                     <Label className="mb-2 block">Premium Photo Prints</Label>
-                    <div className="grid grid-cols-2 gap-3">
-                      {[
-                        { key: false, label: 'Standard', desc: 'Regular print quality' },
-                        { key: true, label: 'Premium Photo', desc: '₹25/page glossy' },
-                      ].map((opt) => (
-                        <button
-                          key={String(opt.key)}
-                          onClick={() => setOptions({ ...options, premiumPhoto: opt.key })}
-                          className={cn(
-                            'rounded-xl border-2 p-4 text-left transition-all',
-                            options.premiumPhoto === opt.key ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'
-                          )}
-                        >
-                          <p className="font-display text-sm font-semibold">{opt.label}</p>
-                          <p className="text-xs text-muted-foreground">{opt.desc}</p>
-                        </button>
-                      ))}
-                    </div>
+                    <select
+                      value={options.premiumPhoto ? 'true' : 'false'}
+                      onChange={(e) => setOptions({ ...options, premiumPhoto: e.target.value === 'true' })}
+                      className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    >
+                      <option value="false">Standard — Regular print quality</option>
+                      <option value="true">Premium Photo — ₹25/page glossy</option>
+                    </select>
                   </div>
 
                   {/* Notes */}

@@ -46,10 +46,10 @@ export function FileUploader({
       if (!fileList) return;
       setLoadingPages(true);
       const incoming = Array.from(fileList);
-      const MAX_FILE_SIZE = 50 * 1024 * 1024;
+      const MAX_FILE_SIZE = 200 * 1024 * 1024;
       const validFiles = incoming.filter((f) => {
         if (f.size > MAX_FILE_SIZE) {
-          toast.error(`${f.name} exceeds 50MB limit and was skipped.`);
+          toast.error(`${f.name} exceeds 200MB limit and was skipped.`);
           return false;
         }
         return true;
@@ -140,7 +140,7 @@ export function FileUploader({
           {loadingPages ? 'Reading PDF pages…' : 'Drop files here or click to browse'}
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
-          PDF, DOCX, PPTX, JPG, PNG • Max 50MB
+          PDF, DOCX, PPTX, JPG, PNG • Max 200MB
         </p>
       </div>
 

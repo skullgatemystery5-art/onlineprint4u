@@ -82,13 +82,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       return 'local';
     }
   });
-  const [pincode, setPincode] = useState(() => {
-    try {
-      return localStorage.getItem('op4u_cart_pincode') || '';
-    } catch {
-      return '';
-    }
-  });
+  const [pincode, setPincode] = useState('');
 
   useEffect(() => {
     getActivePricingRates().then((data) => {
@@ -111,9 +105,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     try { localStorage.setItem('op4u_cart_courier', selectedCourier); } catch { /* ignore */ }
   }, [selectedCourier]);
-  useEffect(() => {
-    try { localStorage.setItem('op4u_cart_pincode', pincode); } catch { /* ignore */ }
-  }, [pincode]);
+
 
   const addItem = useCallback((item: OrderItem, file?: File) => {
     setItems((prev) => [...prev, item]);
