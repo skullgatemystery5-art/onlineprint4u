@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import {
   getProfile,
   upsertProfile,
@@ -7,16 +7,13 @@ import {
 } from './database';
 import type { User as FirebaseUser } from 'firebase/auth';
 import {
-  signInWithPhoneNumber,
-  RecaptchaVerifier,
-  type ConfirmationResult,
   onAuthStateChanged,
   signOut as firebaseSignOut,
   signInWithEmailAndPassword,
   sendPasswordResetEmail,
   signInWithCustomToken,
 } from 'firebase/auth';
-import { firebaseAuth, RECAPTCHA_ENTERPRISE_SITE_KEY } from './firebase';
+import { firebaseAuth } from './firebase';
 
 type AuthUser = {
   uid: string;
@@ -35,8 +32,6 @@ type AuthContextType = {
   otpSending: boolean;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
-  sendPhoneOtp: (phone: string) => Promise<SendOtpResult>;
-  verifyPhoneOtp: (otp: string) => Promise<{ error: string | null }>;
   sendEmailOtp: (email: string) => Promise<SendOtpResult>;
   verifyEmailOtp: (email: string, token: string) => Promise<{ error: string | null }>;
   adminLogin: (email: string, password: string) => Promise<{ error: string | null }>;
@@ -51,8 +46,6 @@ const AuthContext = createContext<AuthContextType>({
   otpSending: false,
   signOut: async () => {},
   refreshProfile: async () => {},
-  sendPhoneOtp: async () => ({ error: 'Not initialized' }),
-  verifyPhoneOtp: async () => ({ error: 'Not initialized' }),
   sendEmailOtp: async () => ({ error: 'Not initialized' }),
   verifyEmailOtp: async () => ({ error: 'Not initialized' }),
   adminLogin: async () => ({ error: 'Not initialized' }),
@@ -77,47 +70,11 @@ function getCloudFunctionUrl(endpoint: string): string {
   return `/${endpoint}`;
 }
 
-const RECAPTCHA_CONTAINER_ID = 'firebase-recaptcha-container';
-
-function createRecaptchaContainer(): string {
-  const existing = document.getElementById(RECAPTCHA_CONTAINER_ID);
-  if (existing) existing.remove();
-
-  const container = document.createElement('div');
-  container.id = RECAPTCHA_CONTAINER_ID;
-  container.style.position = 'fixed';
-  container.style.bottom = '0';
-  container.style.left = '0';
-  container.style.zIndex = '-1';
-  container.style.width = '304px';
-  container.style.height = '78px';
-  container.style.overflow = 'hidden';
-  container.setAttribute('aria-hidden', 'true');
-  document.body.appendChild(container);
-  return RECAPTCHA_CONTAINER_ID;
-}
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
-  const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
   const [otpSending, setOtpSending] = useState(false);
-  const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
-
-  const clearRecaptcha = useCallback(() => {
-    const verifier = recaptchaVerifierRef.current;
-    if (verifier) {
-      try {
-        verifier.clear();
-      } catch {
-        // ignore
-      }
-      recaptchaVerifierRef.current = null;
-    }
-    const existing = document.getElementById(RECAPTCHA_CONTAINER_ID);
-    if (existing) existing.remove();
-  }, []);
 
   const fetchProfile = useCallback(async (uid: string) => {
     try {
@@ -158,205 +115,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       if (unsubFb) unsubFb();
-      clearRecaptcha();
     };
-  }, [fetchProfile, clearRecaptcha]);
-
-  const sendPhoneOtp = useCallback(
-    async (phone: string): Promise<SendOtpResult> => {
-      if (!isFirebaseConfigured || !firebaseAuth) {
-        return { error: 'Phone OTP is not configured. Please contact support.' };
-      }
-
-      // Sanitize the phone number: strip everything except digits
-      const digits = phone.replace(/[^\d]/g, '');
-      if (digits.length < 10) {
-        return { error: 'Please enter a valid 10-digit mobile number.' };
-      }
-      // Take last 10 digits and prepend +91 (India country code)
-      const fullPhone = `+91${digits.slice(-10)}`;
-
-      setOtpSending(true);
-
-      const auth = firebaseAuth;
-      if (!auth) {
-        return { error: 'Phone OTP is not configured. Please contact support.' };
-      }
-
-      // Wait for the reCAPTCHA Enterprise script to be ready before proceeding.
-      // This ensures window.grecaptcha.enterprise is available so Firebase's SDK
-      // uses Enterprise mode and never falls back to the legacy v2 endpoint that
-      // was returning the old/deleted site key.
-      const waitForRecaptchaEnterprise = async (): Promise<boolean> => {
-        if (typeof window === 'undefined') return false;
-        const grecaptcha = window.grecaptcha;
-        if (grecaptcha && (grecaptcha as any).enterprise) return true;
-
-        // Wait up to 5 seconds for the script to load
-        for (let i = 0; i < 50; i++) {
-          await new Promise((r) => setTimeout(r, 100));
-          const g = window.grecaptcha;
-          if (g && (g as any).enterprise) return true;
-        }
-        return false;
-      };
-
-      const attemptSend = async (): Promise<SendOtpResult> => {
-        clearRecaptcha();
-
-        // Ensure the Enterprise script is loaded
-        const enterpriseReady = await waitForRecaptchaEnterprise();
-        if (!enterpriseReady) {
-          // Inject the Enterprise script as a last-resort fallback
-          const script = document.createElement('script');
-          script.src = `https://www.google.com/recaptcha/enterprise.js?render=${RECAPTCHA_ENTERPRISE_SITE_KEY}`;
-          script.async = true;
-          script.defer = true;
-          document.head.appendChild(script);
-          await new Promise((r) => setTimeout(r, 500));
-        }
-
-        const containerId = createRecaptchaContainer();
-
-        // Give the DOM a moment to settle before instantiating the verifier
-        await new Promise((r) => setTimeout(r, 50));
-
-        // Create invisible RecaptchaVerifier — fully invisible, no visible widget.
-        // Firebase Auth v12 checks window.grecaptcha.enterprise on the first call
-        // to signInWithPhoneNumber. If present, it uses Enterprise mode and fetches
-        // the site key from the Firebase Console config, bypassing the legacy v2
-        // recaptchaParams endpoint entirely. The v2 RecaptchaVerifier here is only
-        // used as a fallback container when Enterprise is in audit mode.
-        const verifier = new RecaptchaVerifier(auth, containerId, {
-          size: 'invisible',
-          callback: () => {
-            // reCAPTCHA solved — signInWithPhoneNumber proceeds automatically
-          },
-          'expired-callback': () => {
-            clearRecaptcha();
-          },
-        });
-        recaptchaVerifierRef.current = verifier;
-
-        await verifier.render();
-
-        const result = await signInWithPhoneNumber(auth, fullPhone, verifier);
-        setConfirmationResult(result);
-        return { error: null };
-      };
-
-      try {
-        return await attemptSend();
-      } catch (err) {
-        const error = err as { code?: string; message?: string };
-        console.error('[Phone OTP] First attempt failed:', error.code ?? 'unknown', error.message ?? err);
-        clearRecaptcha();
-
-        // Retry up to 2 times on transient reCAPTCHA errors
-        const transientErrors = [
-          'auth/captcha-check-failed',
-          'auth/invalid-recaptcha-token',
-          'auth/argument-error',
-        ];
-        const isTransient =
-          (error.code && transientErrors.includes(error.code)) ||
-          (error.message && (error.message.includes('Invalid site key') || error.message.includes('reCAPTCHA not loaded')));
-
-        if (isTransient) {
-          for (let attempt = 0; attempt < 2; attempt++) {
-            try {
-              await new Promise((r) => setTimeout(r, 500));
-              return await attemptSend();
-            } catch (retryErr) {
-              const retryError = retryErr as { code?: string; message?: string };
-              console.error(`[Phone OTP] Retry ${attempt + 1} failed:`, retryError.code ?? 'unknown', retryError.message ?? retryErr);
-              clearRecaptcha();
-              if (attempt === 1) {
-                return { error: 'Verification failed after retries. Please refresh the page and try again.', cooldownSec: 15 };
-              }
-            }
-          }
-        }
-
-        // Non-transient errors — return specific messages
-        if (error.code === 'auth/too-many-requests') {
-          return {
-            error: 'Too many OTP requests. Please wait before requesting another code.',
-            cooldownSec: 60,
-          };
-        }
-        if (error.code === 'auth/invalid-phone-number') {
-          return { error: 'Invalid phone number. Please check and try again.' };
-        }
-        if (error.code === 'auth/operation-not-allowed') {
-          return { error: 'Phone login is not enabled. Please contact support.' };
-        }
-        if (error.code === 'auth/quota-exceeded') {
-          return { error: 'SMS quota exceeded. Please try again later or use email login.' };
-        }
-        if (error.message && error.message.includes('Invalid site key')) {
-          return { error: 'reCAPTCHA site key mismatch. Please ensure the new Enterprise key is configured in the Firebase Console.' };
-        }
-        if (error.message && error.message.includes('reCAPTCHA not loaded')) {
-          return { error: 'Verification failed to load. Please refresh the page and try again.' };
-        }
-        const msg = error.message ?? 'Failed to send OTP';
-        return { error: msg };
-      } finally {
-        setOtpSending(false);
-      }
-    },
-    [clearRecaptcha]
-  );
-
-  const verifyPhoneOtp = useCallback(
-    async (otp: string): Promise<{ error: string | null }> => {
-      if (!confirmationResult) {
-        return { error: 'No OTP request in progress. Please request a new code.' };
-      }
-      try {
-        const fbUserCred = await confirmationResult.confirm(otp);
-        if (!fbUserCred.user) {
-          return { error: 'Verification failed — no user returned' };
-        }
-
-        const authUser = toAuthUser(fbUserCred.user);
-        setUser(authUser);
-
-        const phone = authUser.phoneNumber ?? '';
-        const displayName = authUser.displayName ?? '';
-        const email = authUser.email ?? '';
-
-        await upsertProfile({
-          id: authUser.uid,
-          email,
-          full_name: displayName,
-          phone,
-          role: 'user',
-        });
-
-        await fetchProfile(authUser.uid);
-
-        clearRecaptcha();
-        setConfirmationResult(null);
-        return { error: null };
-      } catch (err) {
-        const error = err as { code?: string; message?: string };
-        console.error('[Phone OTP] Failed to verify OTP:', error.code ?? 'unknown', error.message ?? err);
-        if (error.code === 'auth/invalid-verification-code') {
-          return { error: 'Invalid verification code. Please check and try again.' };
-        }
-        if (error.code === 'auth/code-expired') {
-          return { error: 'This code has expired. Please request a new one.' };
-        }
-        if (error.code === 'auth/too-many-requests') {
-          return { error: 'Too many attempts. Please wait a moment and try again.' };
-        }
-        return { error: error.message || 'Invalid or expired OTP' };
-      }
-    },
-    [confirmationResult, fetchProfile, clearRecaptcha]
-  );
+  }, [fetchProfile]);
 
   const sendEmailOtp = useCallback(
     async (email: string): Promise<SendOtpResult> => {
@@ -527,11 +287,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // ignore
       }
     }
-    clearRecaptcha();
-    setConfirmationResult(null);
     setUser(null);
     setProfile(null);
-  }, [clearRecaptcha]);
+  }, []);
 
   return (
     <AuthContext.Provider
@@ -543,8 +301,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         otpSending,
         signOut,
         refreshProfile,
-        sendPhoneOtp,
-        verifyPhoneOtp,
         sendEmailOtp,
         verifyEmailOtp,
         adminLogin,

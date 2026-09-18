@@ -1240,12 +1240,8 @@ export default function AdminPage() {
                     </div>
 
                     <div>
-                      <h3 className="mb-3 font-display text-sm font-semibold">Firebase Phone Auth</h3>
-                      <div>
-                        <Label className="text-xs">Firebase Phone Auth Enabled (true/false)</Label>
-                        <Input value={settingsForm.firebase_phone_auth_enabled ?? ''} onChange={(e) => setSettingsForm({ ...settingsForm, firebase_phone_auth_enabled: e.target.value })} placeholder="false" />
-                      </div>
-                      <p className="mt-2 text-xs text-muted-foreground">Set to 'true' when Firebase Phone Auth is activated. Firebase Phone Auth is used by default.</p>
+                      <h3 className="mb-3 font-display text-sm font-semibold">Firebase Auth</h3>
+                      <p className="text-xs text-muted-foreground">Email-based OTP authentication is active. Phone auth has been removed.</p>
                     </div>
                   </div>
                 </CardContent>

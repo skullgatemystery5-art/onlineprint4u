@@ -8,7 +8,6 @@ import {
   Loader2,
   Truck,
   ShieldCheck,
-  Smartphone,
   CheckCircle2,
   Bike,
   Plane,
@@ -52,7 +51,7 @@ type CheckoutSection = 'auth' | 'address' | 'delivery' | 'payment' | 'review';
 
 export default function CheckoutPage() {
   const navigate = useNavigate();
-  const { user, profile, sendPhoneOtp, verifyPhoneOtp } = useAuth();
+  const { user, profile, sendEmailOtp, verifyEmailOtp, otpSending } = useAuth();
   const {
     items,
     fileObjects,
@@ -71,12 +70,11 @@ export default function CheckoutPage() {
 
   const [showPolicy, setShowPolicy] = useState(false);
 
-  // --- Auth state (embedded phone OTP) ---
-  const [authStep, setAuthStep] = useState<'phone' | 'otp' | 'done'>('phone');
-  const [phoneInput, setPhoneInput] = useState('');
+  // --- Auth state (embedded email OTP) ---
+  const [authStep, setAuthStep] = useState<'email' | 'otp' | 'done'>('email');
+  const [emailInput, setEmailInput] = useState('');
   const [otpInput, setOtpInput] = useState('');
   const [fullName, setFullName] = useState('');
-  const [emailInput] = useState('');
   const [, setOtpSent] = useState(false);
   const [otpTimer, setOtpTimer] = useState(0);
   const [authBusy, setAuthBusy] = useState(false);
@@ -181,15 +179,14 @@ export default function CheckoutPage() {
     review: null,
   };
 
-  // --- Phone OTP handlers ---
+  // --- Email OTP handlers ---
   const handleSendOtp = async () => {
-    const cleaned = phoneInput.replace(/\D/g, '');
-    if (cleaned.length !== 10) {
-      toast.error('Enter a valid 10-digit mobile number.');
+    if (!emailInput || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailInput)) {
+      toast.error('Please enter a valid email address.');
       return;
     }
     setAuthBusy(true);
-    const { error } = await sendPhoneOtp(cleaned);
+    const { error } = await sendEmailOtp(emailInput);
     setAuthBusy(false);
     if (error) {
       toast.error(error);
@@ -198,7 +195,7 @@ export default function CheckoutPage() {
     setOtpSent(true);
     setAuthStep('otp');
     setOtpTimer(30);
-    toast.success('OTP sent to +91 ' + cleaned);
+    toast.success('Verification code sent to your email.');
   };
 
   const handleVerifyOtp = async () => {
@@ -207,7 +204,7 @@ export default function CheckoutPage() {
       return;
     }
     setAuthBusy(true);
-    const { error } = await verifyPhoneOtp(otpInput);
+    const { error } = await verifyEmailOtp(emailInput, otpInput);
     setAuthBusy(false);
     if (error) {
       toast.error(error);
@@ -226,7 +223,7 @@ export default function CheckoutPage() {
 
     const customerName = profile?.full_name || fullName || newAddr.name || '';
     const customerEmail = profile?.email || emailInput || newAddr.email || '';
-    const customerPhone = profile?.phone || phoneInput || newAddr.phone || '';
+    const customerPhone = profile?.phone || newAddr.phone || '';
 
     setPaymentProcessing(true);
 
@@ -445,7 +442,7 @@ export default function CheckoutPage() {
           </div>
 
           <div className="space-y-6">
-            {/* ============ SECTION 1: AUTHENTICATION (Phone OTP) ============ */}
+            {/* ============ SECTION 1: AUTHENTICATION (Email OTP) ============ */}
             <section
               ref={(el) => { sectionRefs.auth = el; }}
               className={cn(
@@ -463,31 +460,26 @@ export default function CheckoutPage() {
                 <h2 className="font-display text-lg font-bold">Login / Signup</h2>
                 {user && (
                   <span className="ml-auto rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-600">
-                    Logged in as {user.phoneNumber || user.email}
+                    Logged in as {user.email || user.phoneNumber}
                   </span>
                 )}
               </div>
 
               {!user && (
                 <div className="space-y-4">
-                  {authStep === 'phone' && (
+                  {authStep === 'email' && (
                     <>
                       <div className="grid gap-4 sm:grid-cols-2">
                         <div className="space-y-2">
-                          <Label htmlFor="auth-phone">Mobile Number</Label>
-                          <div className="flex items-center gap-2">
-                            <span className="flex h-10 items-center rounded-lg border border-border bg-muted/50 px-3 text-sm font-medium text-muted-foreground">
-                              +91
-                            </span>
-                            <Input
-                              id="auth-phone"
-                              value={phoneInput}
-                              onChange={(e) => setPhoneInput(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                              placeholder="10-digit mobile number"
-                              maxLength={10}
-                              className="flex-1"
-                            />
-                          </div>
+                          <Label htmlFor="auth-email">Email Address</Label>
+                          <Input
+                            id="auth-email"
+                            type="email"
+                            value={emailInput}
+                            onChange={(e) => setEmailInput(e.target.value)}
+                            placeholder="you@example.com"
+                            className="flex-1"
+                          />
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="auth-name">Full Name (optional)</Label>
@@ -501,13 +493,13 @@ export default function CheckoutPage() {
                       </div>
                       <Button
                         onClick={handleSendOtp}
-                        disabled={authBusy || phoneInput.length !== 10}
+                        disabled={authBusy || otpSending || !emailInput}
                         className="w-full gap-2"
                       >
-                        {authBusy ? (
-                          <><Loader2 className="h-4 w-4 animate-spin" /> Sending OTP...</>
+                        {authBusy || otpSending ? (
+                          <><Loader2 className="h-4 w-4 animate-spin" /> Sending code...</>
                         ) : (
-                          <><Smartphone className="h-4 w-4" /> Send OTP</>
+                          <>Send Verification Code</>
                         )}
                       </Button>
                     </>
@@ -516,7 +508,7 @@ export default function CheckoutPage() {
                   {authStep === 'otp' && (
                     <>
                       <div className="rounded-lg bg-primary/5 p-3 text-sm text-muted-foreground">
-                        Enter the 6-digit OTP sent to <span className="font-semibold text-foreground">+91 {phoneInput}</span>
+                        Enter the 6-digit code sent to <span className="font-semibold text-foreground">{emailInput}</span>
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="auth-otp">Enter OTP</Label>
@@ -531,17 +523,17 @@ export default function CheckoutPage() {
                       </div>
                       <div className="flex items-center justify-between">
                         <button
-                          onClick={() => { setAuthStep('phone'); setOtpSent(false); setOtpInput(''); }}
+                          onClick={() => { setAuthStep('email'); setOtpSent(false); setOtpInput(''); }}
                           className="text-sm text-muted-foreground hover:underline"
                         >
-                          Change number
+                          Change email
                         </button>
                         <button
                           onClick={otpTimer === 0 ? handleSendOtp : undefined}
                           disabled={otpTimer > 0}
                           className="text-sm text-primary hover:underline disabled:opacity-50"
                         >
-                          {otpTimer > 0 ? `Resend in ${otpTimer}s` : 'Resend OTP'}
+                          {otpTimer > 0 ? `Resend in ${otpTimer}s` : 'Resend code'}
                         </button>
                       </div>
                       <Button
@@ -567,7 +559,7 @@ export default function CheckoutPage() {
                     <p className="text-sm font-semibold text-emerald-700">
                       Authenticated as {profile?.full_name || user.displayName || 'Verified Customer'}
                     </p>
-                    <p className="text-xs text-emerald-600">{user.phoneNumber || user.email}</p>
+                    <p className="text-xs text-emerald-600">{user.email || user.phoneNumber}</p>
                   </div>
                 </div>
               )}

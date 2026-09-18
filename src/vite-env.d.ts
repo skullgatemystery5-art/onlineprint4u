@@ -1,19 +1,5 @@
 /// <reference types="vite/client" />
 
-interface GrecaptchaEnterprise {
-  ready: (cb: () => void) => void;
-  execute: (siteKey: string, opts: { action: string }) => Promise<string>;
-}
-
-interface Grecaptcha {
-  enterprise?: GrecaptchaEnterprise;
-  ready?: (cb: () => void) => void;
-}
-
-interface Window {
-  grecaptcha?: Grecaptcha;
-}
-
 interface ImportMetaEnv {
   readonly VITE_FIREBASE_API_KEY: string;
   readonly VITE_FIREBASE_AUTH_DOMAIN: string;
